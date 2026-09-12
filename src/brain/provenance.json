@@ -1,0 +1,31 @@
+{
+  "dataset": "MaleCNS v1.0",
+  "sourceUrl": "https://raw.githubusercontent.com/AbijahKaj/fruit-fly-brain-research/f84d061c3c220c9b0da20dcc486f3864ce0832d8/app/public/graphs/flight-v1.json",
+  "sourceRepo": "https://github.com/AbijahKaj/fruit-fly-brain-research",
+  "sourceCommit": "f84d061c3c220c9b0da20dcc486f3864ce0832d8",
+  "sourceGitBlobSha": "5706520e1b2977ec5835cce018cd72cffbf9e791",
+  "upstreamData": "https://male-cns.janelia.org/download/",
+  "license": "CC BY 4.0",
+  "licenseUrl": "https://creativecommons.org/licenses/by/4.0/",
+  "credit": "Berg et al.; FlyEM at HHMI Janelia, University of Cambridge, MRC Laboratory of Molecular Biology, and Google Research. Prepared flight-v1 subset by AbijahKaj.",
+  "neurons": 1072,
+  "directedEdges": 26544,
+  "extraction": {
+    "minEdge": 5,
+    "minBridgeIn": 10,
+    "minBridgeOut": 10,
+    "inputTypes": "^(HSE|HSN|HSS|HST|VS|VST1|VST2|VSm|H2|DCH|VCH|LPLC2|LC4)$",
+    "dnTypes": "^(DNg02_[a-g]|DNp0[1-6])$",
+    "mnSubclass": [
+      "wm",
+      "hm"
+    ]
+  },
+  "transformations": [
+    "Original upstream prepared subset, with a final newline added on save.",
+    "Includes selected visual projection neurons, descending neurons, central and VNC bridge neurons, and wing/haltere motor neurons.",
+    "Original unsigned synapse counts retained; transmitter-derived sign[] retained."
+  ],
+  "modelingDisclosure": "Real recorded connectivity; artificial game sensors, simplified neuron dynamics, and a hand-designed game action decoder. Not a complete brain, not recorded live neural activity, and not evidence of learning.",
+  "coordinateDisclosure": "This graph has no anatomical positions. Any 3D placement of nodes must be labeled schematic."
+}
