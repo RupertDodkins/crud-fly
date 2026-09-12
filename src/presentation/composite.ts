@@ -55,7 +55,7 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
     const scale = Math.min(sceneW / scene.width, H / scene.height);
     const dw = scene.width * scale;
     const dh = scene.height * scale;
-    ctx.fillStyle = '#a9dccb';
+    ctx.fillStyle = '#bcb8ac';
     ctx.fillRect(0, 0, sceneW, H);
     ctx.drawImage(scene, (sceneW - dw) / 2, (H - dh) / 2, dw, dh);
 

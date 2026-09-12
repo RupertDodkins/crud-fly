@@ -37,10 +37,10 @@ export function createNeuralActivity(view: BrainView): { canvas: HTMLCanvasEleme
     const rates = view.rates();
     ctx.fillStyle = '#0f2a24';
     ctx.fillRect(0, 0, 600, 350);
-    ctx.font = '20px Menlo, Consolas, monospace';
+    ctx.font = '28px Menlo, Consolas, monospace';
     ctx.fillStyle = '#f8edc5';
     ctx.fillText('SIMULATED NEURAL ACTIVITY', 22, 32);
-    ctx.font = '15px Menlo, Consolas, monospace';
+    ctx.font = '22px Menlo, Consolas, monospace';
     ctx.fillStyle = '#87c9b1';
     ctx.fillText(anatomy ? 'Real soma positions · MaleCNS v1.0' : 'Schematic layout · one dot per neuron', 22, 57);
     const peak = Math.max(0.001, ...rates);

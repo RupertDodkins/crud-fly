@@ -75,7 +75,7 @@ export interface FlyRig {
   readonly flashable: readonly T.Mesh[];
   readonly scale: number;
   readonly ready: () => boolean;
-  readonly animateAnatomy: (walking: boolean, phaseT: number, t: number) => void;
+  readonly animateAnatomy: (pose: FlyPose) => void;
 }
 
 export function makeFly(lengthMetres: number, ballRadius = lengthMetres / 3.6, bodyColor = 0xae772d): FlyRig {
@@ -184,12 +184,13 @@ export function makeFly(lengthMetres: number, ballRadius = lengthMetres / 3.6, b
     }).catch(error => console.error('FlyBody asset could not load; showing procedural fly.', error));
   }
   return { root, body, wings, legs, flashable, scale: s, ready: () => !!anatomy,
-    animateAnatomy: (walking, phaseT, t) => anatomy?.animate(walking, phaseT, t) };
+    animateAnatomy: pose => anatomy?.animate(pose) };
 
 }
 
 export interface FlyPose {
   readonly phase: FlyPhase;
+  readonly carrying?: boolean;
   readonly phaseT: number;
   /** Ground speed in m/s, estimated by the caller from successive frames. */
   readonly speed: number;
@@ -205,7 +206,7 @@ const RECOVER_DURATION = 0.25;
 export function animateFly(rig: FlyRig, pose: FlyPose): void {
   const { phase, phaseT, t } = pose;
   const walking = phase === 'approach';
-  rig.animateAnatomy(walking, phaseT, t);
+  rig.animateAnatomy(pose);
   const excited = phase === 'approach' || phase === 'strike';
 
   for (const { pivot, side } of rig.wings) {

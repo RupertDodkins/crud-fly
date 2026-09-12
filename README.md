@@ -4,7 +4,7 @@
 
 **Live:** https://rupertdodkins.github.io/crud-fly/?brain=1&seed=42 · [MP4](public/media/crud-fly-seed42.mp4)
 
-A fruit fly plays crud, the no-cue pool game. The throw is driven by 1,072 real neurons from the male fruit-fly connectome.*
+A fruit fly plays crud, the no-cue pool game. 1,072 real neurons from the male fruit-fly connectome nudge its aim.* It loses to a scripted bot with no brain about three times in four.
 
 ## What is real
 
@@ -36,6 +36,12 @@ npm run dev
 ## Deploy
 
 Static site, no backend. `.github/workflows/pages.yml` runs the tests, builds with `BASE_PATH=/crud-fly/`, and publishes `dist/` to GitHub Pages on every push to `main`. The only server-side code in the repo is a dev-only Vite middleware that lets the in-browser recorder save WebM files to `tools/out/`; it is not part of the build.
+
+## How it was built
+
+One evening, one integration owner, three agents on disjoint ownership fences. A type sketch of the domain (`MatchState`, the `Turn` state machine, `Frame`) was committed before any fan-out, and every later contract change was additive so released files kept compiling. The core is a deterministic 120 Hz simulation whose matches serialise to tapes with state hashes, so the visual layer could be iterated by a separate agent against frozen replays without touching physics, rules, or the controller. The connectome pilot wraps the same heuristic the opponent uses, with the graph allowed to perturb only the throw; when I let it perturb more, the fly lost 40 of 40 seeds and could not serve, so the gain was set where the brain's influence fits inside a ball width and the result is reported above rather than tuned away. Every borrowed asset carries a provenance file with source, commit or checksum, and licence. CI runs the tests and deploys the static build to GitHub Pages on push.
+
+Not done, deliberately: no training. The honest next step would be a small linear readout from the descending-neuron rates to an aim correction, fitted against the heuristic over seeds with the connectome weights frozen, and scored the same way the current gain was.
 
 ## Credits
 

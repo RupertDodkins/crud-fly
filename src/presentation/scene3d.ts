@@ -8,7 +8,7 @@ import type { BrainView } from '../controllers/connectome-pilot';
 import { createNeuralActivity } from './neural-activity';
 import type { Frame, PlayerId, RuleEvent, Table, Vec2 } from '../core/model';
 import { animateFly, box, colors, makeFly, mat, mesh, sphere, type FlyRig } from './fly-rig';
-import { buildTable } from './table';
+import { buildTable, FLOOR_COLOR } from './table';
 
 /**
  * Three.js diorama: table plus flies ported from flyway-surfer `dist/scene.js` (MIT):
@@ -66,7 +66,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true;
-  renderer.shadowMap.type = T.PCFSoftShadowMap;
+  renderer.shadowMap.type = T.VSMShadowMap;
   renderer.outputColorSpace = T.SRGBColorSpace;
   renderer.toneMapping = T.ACESFilmicToneMapping;
   renderer.toneMappingExposure = 1.07;
@@ -77,6 +77,38 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
   let neural: ReturnType<typeof createNeuralActivity> | undefined;
   let neuralTexture: T.CanvasTexture | undefined;
   const overlay = new T.Scene();
+  const statusCanvas = document.createElement('canvas');
+  statusCanvas.width = 600; statusCanvas.height = 350;
+  const statusContext = statusCanvas.getContext('2d')!;
+  const statusTexture = new T.CanvasTexture(statusCanvas);
+  statusTexture.colorSpace = T.SRGBColorSpace;
+  const statusSprite = new T.Sprite(new T.SpriteMaterial({ map: statusTexture, depthTest: false, toneMapped: false }));
+  overlay.add(statusSprite);
+  function drawStatus(frame: Frame): void {
+    const { turn } = frame;
+    let title: string, action: string;
+    if (turn.kind === 'serve' || turn.kind === 'awaiting_shot') {
+      const player = frame.players[turn.shooter];
+      title = `${player.name}'S TURN`;
+      action = player.fly.phase === 'strike' ? 'Throwing cue' : player.fly.phase === 'aim' ? 'Aiming'
+        : player.fly.carrying ? 'Cue ball in hand' : 'Retrieving cue';
+    } else if (turn.kind === 'in_play') {
+      title = 'BALL IN PLAY'; action = `${frame.players[turn.lastShooter].name} threw`;
+    } else if (turn.kind === 'over') {
+      title = 'MATCH OVER'; action = `${frame.players[turn.winner].name} wins`;
+    } else {
+      title = 'RESETTING'; action = turn.outcome.kind === 'life_lost' ? 'Life lost' : 'Next turn';
+    }
+    statusContext.clearRect(0, 0, 600, 350);
+    statusContext.fillStyle = '#25372f';
+    statusContext.font = 'bold 42px Menlo, Consolas, monospace'; statusContext.fillText(title, 8, 65);
+    statusContext.font = '29px Menlo, Consolas, monospace'; statusContext.fillText(action, 8, 115);
+    statusContext.font = '23px Menlo, Consolas, monospace';
+    statusContext.fillText('Close-up: FLY', 8, 235);
+    statusContext.fillText('FLY amber / BOT blue', 8, 278);
+    statusTexture.needsUpdate = true;
+  }
+
   const detailCamera = new T.OrthographicCamera(-0.1, 0.1, 0.065, -0.065, 0.01, 2);
   const overlayCamera = new T.OrthographicCamera(0, 1, 1, 0, -1, 1);
   const neuralSprite = new T.Sprite(new T.SpriteMaterial({ depthTest: false }));
@@ -91,20 +123,21 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     resize(container.clientWidth, container.clientHeight);
   }
   const scene = new T.Scene();
-  scene.background = new T.Color(colors.mint);
+  scene.background = new T.Color(FLOOR_COLOR);
 
-  scene.add(new T.HemisphereLight(0xd9f4ff, 0x8582ab, 1.85));
-  const sun = new T.DirectionalLight(0xffe6b5, 3.0);
+  scene.add(new T.HemisphereLight(0xfff6e8, 0x727978, 2.1));
+  const sun = new T.DirectionalLight(0xffeed5, 1.9);
   sun.position.set(-0.7, 4.0, -0.8);
   sun.castShadow = true;
-  sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.mapSize.set(1024, 1024);
+  sun.shadow.blurSamples = 8;
   sun.shadow.radius = 4;
   Object.assign(sun.shadow.camera, { left: -1.9, right: 1.9, top: 1.5, bottom: -1.5, near: 0.5, far: 8 });
   sun.shadow.bias = -0.0004;
   sun.shadow.normalBias = 0.002;
   sun.target.position.set(0, 0, 0);
   scene.add(sun, sun.target);
-  const rim = new T.DirectionalLight(0xbbe7ff, 1.1);
+  const rim = new T.DirectionalLight(0xe3edff, 0.65);
   rim.position.set(0.8, 0.8, 0.8);
   scene.add(rim);
 
@@ -309,7 +342,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
       actor.prev = fly.pos;
       actor.rig.root.position.set(fly.pos.x, 0, fly.pos.y);
       actor.rig.root.rotation.y = headingToRotationY(fly.heading);
-      animateFly(actor.rig, { phase: fly.phase, phaseT: fly.phaseT, speed: actor.speed, t: elapsed, dt });
+      animateFly(actor.rig, { phase: fly.phase, phaseT: fly.phaseT, carrying: fly.carrying ?? false, speed: actor.speed, t: elapsed, dt });
       actor.flash = Math.max(0, actor.flash - dt);
       applyFlash(actor);
 
@@ -334,11 +367,11 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
       camera.top = 0.15; camera.bottom = -0.15;
       camera.updateProjectionMatrix();
     }
-    const band = neural && !detail ? Math.min(300, canvas.clientWidth * 0.34) * 350 / 600 + 28 : 0;
+    const band = neural && !detail ? Math.min(240, canvas.clientWidth * 0.34) * 350 / 600 + 28 : 0;
     renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight - band);
     renderer.render(scene, camera);
     if (neural && !detail && flies[0]) {
-      const width = Math.min(300, canvas.clientWidth * 0.34);
+      const width = Math.min(240, canvas.clientWidth * 0.34);
       const left = width + 30, bottom = canvas.clientHeight - band + 12;
       const height = band - 24;
       const target = new T.Vector3(0, 0.028, 0.055).applyQuaternion(flies[0].rig.root.quaternion).add(flies[0].rig.root.position);
@@ -354,9 +387,15 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     }
     renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight);
     if (neural && neuralTexture) {
+      drawStatus(frame);
+      const statusLeft = Math.min(240, canvas.clientWidth * 0.34) * 2 + 50;
+      const statusWidth = Math.min(300, canvas.clientWidth - statusLeft - 10);
+      statusSprite.visible = statusWidth > 90;
+      statusSprite.scale.set(statusWidth / canvas.clientWidth, statusWidth * 350 / 600 / canvas.clientHeight, 1);
+      statusSprite.position.set((statusLeft + statusWidth / 2) / canvas.clientWidth, 0.98 - statusWidth * 350 / 600 / canvas.clientHeight / 2, 0);
       neural.draw();
       neuralTexture.needsUpdate = true;
-      const width = Math.min(300, canvas.clientWidth * 0.34);
+      const width = Math.min(240, canvas.clientWidth * 0.34);
       const w = width / canvas.clientWidth, h = width * 350 / 600 / canvas.clientHeight;
       neuralSprite.scale.set(w, h, 1);
       neuralSprite.position.set(0.018 + w / 2, 0.98 - h / 2, 0);
@@ -373,7 +412,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     renderer.setSize(w, h, false);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-    const band = neural && !detail ? Math.min(300, w * 0.34) * 350 / 600 + 28 : 0;
+    const band = neural && !detail ? Math.min(240, w * 0.34) * 350 / 600 + 28 : 0;
     aspect = w / Math.max(1, h - band);
     frameCamera();
   }
