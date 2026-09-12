@@ -226,7 +226,7 @@ export const DEFAULT_PILOT: PilotParams = {
   gain: 1.2,
   maxRate: 3,
   stepsPerDecision: 3,
-  steerGain: 0.15,
+  steerGain: 0.025,
   forceGain: 0.1,
 };
 

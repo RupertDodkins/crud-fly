@@ -29,6 +29,6 @@ export function loadSomaPositions(): SomaPositions {
     um,
     missing: data.missing,
     bbox: { min: triple(backdropMeta.bbox.min, 'bbox.min'), max: triple(backdropMeta.bbox.max, 'bbox.max') },
-    backdrop: { url: `/brain/${backdropMeta.file}`, count: backdropMeta.count, sampledFrom: backdropMeta.sampledFrom },
+    backdrop: { url: `${import.meta.env.BASE_URL}brain/${backdropMeta.file}`, count: backdropMeta.count, sampledFrom: backdropMeta.sampledFrom },
   };
 }

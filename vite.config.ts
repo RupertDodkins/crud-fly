@@ -28,6 +28,8 @@ function saveToDisk(): Plugin {
   };
 }
 
+// GitHub Pages serves project sites under /<repo>/; the Pages workflow sets BASE_PATH. Local dev stays at /.
 export default defineConfig({
+  base: process.env.BASE_PATH ?? '/',
   plugins: [saveToDisk()],
 });
