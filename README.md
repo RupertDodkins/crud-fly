@@ -1,6 +1,8 @@
 # CRUD Fly
 
-![A digital fruit fly playing crud, with a live neural activity panel](public/media/crud-fly-seed3.gif)
+![A digital fruit fly playing crud, with a live neural activity panel](public/media/crud-fly-seed42.gif)
+
+**Live:** https://rupertdodkins.github.io/crud-fly/?brain=1&seed=42 · [MP4](public/media/crud-fly-seed42.mp4)
 
 A fruit fly plays crud, the no-cue pool game. The throw is driven by 1,072 real neurons from the male fruit-fly connectome.*
 
@@ -8,8 +10,8 @@ A fruit fly plays crud, the no-cue pool game. The throw is driven by 1,072 real 
 
 - **The wiring.** 1,072 neurons and 26,544 directed synaptic connections from the MaleCNS v1.0 connectome (Berg et al., Cell 2026; FlyEM at HHMI Janelia, University of Cambridge, MRC LMB, Google Research; CC BY 4.0). The subset covers LC4 and LPLC2 looming-detector neurons, DNp01–06 and DNg02 descending neurons, the central and VNC neurons that bridge them, and wing and haltere motor neurons. Prepared by [AbijahKaj](https://github.com/AbijahKaj/fruit-fly-brain-research), pinned via [flyway-surfer](https://github.com/shivareddy42/flyway-surfer). See `src/brain/provenance.json`.
 - **The physics.** A deterministic 120 Hz two-ball simulation with rolling friction, cushions, and six pockets. Every match is a replayable tape with state hashes; `public/replays/hero.json` reproduces the clip exactly.
-- **The rules.** Two balls, no cues, three lives, shoot only from the short ends, the object ball must never stop, a pocket costs the last shooter a life, three serve faults cost a life. These are the public common core, labelled demo defaults. The full set of house caveats is not public and the `/ 47` is a joke.
-- **The fly's body.** The controller cannot touch a ball. It must walk to a legal stance, line up, and complete a strike; the engine applies the impulse on contact.
+- **The rules.** Two balls, no cues, three lives each. Ball in hand: the shooter picks the cue ball up wherever it stopped and may throw it only from a short end, either end, never the long sides. Contact passes the turn. The object ball must travel six inches after a hit (less and the hitter pays) and must never stop on your turn (the dead ball is on the player in hand). A pocket costs the last non-shooter a life. The loser serves at a stationary object ball on the foot spot, three attempts. Checked against the ACPA and Official Crud League rules; labelled demo defaults because house rules vary and the `/ 47` is a joke.
+- **The fly's body.** The controller never teleports a ball. It has to walk to the cue ball (reach 10 cm), carry it to a short end at walking speed, turn, and release; the throw leaves from the grasp point. Both flies run the length of the table following the cue ball, the way humans do.
 
 ## What is not
 
@@ -24,16 +26,21 @@ npm install
 npm run dev
 ```
 
-- `/?brain=1&seed=3` connectome fly vs heuristic (default).
+- `/?brain=1&seed=42` connectome fly vs scripted bot (default). `FLY` is the connectome pilot, `BOT` has no brain.
 - `/?brain=0` heuristic vs heuristic.
 - `/?view=2d` top-down debug view.
 - `/?record=1&seconds=16` records a 1280×720 WebM of the composited scene and HUD to `tools/out/` via the dev server, plus the replay tape.
 
-`npm test` runs 33 tests: physics, the rules turn machine, replay determinism, and the pilot (including a mirrored-observation test that the throw angle flips sign with the object ball's side).
+`npm test` runs 55 tests: physics, the rules turn machine (either-end legality, six-inch rule, serve faults, pocket penalties, a scripted grab-and-carry integration), replay determinism, the pilot (including a mirrored-observation test that the throw angle flips sign with the object ball's side), and the vendored soma positions.
+
+## Deploy
+
+Static site, no backend. `.github/workflows/pages.yml` runs the tests, builds with `BASE_PATH=/crud-fly/`, and publishes `dist/` to GitHub Pages on every push to `main`. The only server-side code in the repo is a dev-only Vite middleware that lets the in-browser recorder save WebM files to `tools/out/`; it is not part of the build.
 
 ## Credits
 
-- Connectome data: Berg et al., FlyEM / HHMI Janelia, University of Cambridge, MRC LMB, Google Research. CC BY 4.0. https://male-cns.janelia.org/download/
+- Connectome data and soma positions: Berg et al., FlyEM / HHMI Janelia, University of Cambridge, MRC LMB, Google Research. CC BY 4.0. https://male-cns.janelia.org/download/ The brain panel draws 40,000 real somata as a static backdrop and lights only the 1,072 simulated units at their real coordinates (`src/brain/positions-provenance.json`).
 - `flight-v1` subset: AbijahKaj, MIT.
 - Circuit pilot pattern, fly geometry, animation, palette: Shiva Reddy, flyway-surfer, MIT (`src/brain/LICENSE-flyway-surfer.txt`).
+- Fly anatomy: FlyBody, Google DeepMind / HHMI Janelia, via mujoco_menagerie. Apache-2.0 (`src/presentation/assets/`). Geometry only; the gait is ours.
 - The meme format: Matty Hempstead's flytok and the wave of fly-brain game demos that followed the MaleCNS release.
