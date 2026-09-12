@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CRUD Fly scene harness</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: #193e35; overflow: hidden; }
+      #stage { position: fixed; inset: 0; }
+      #stage canvas { display: block; }
+      #label { position: fixed; left: 12px; top: 10px; color: #f8edc5; font: 13px ui-monospace, Menlo, monospace; pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div id="stage"></div>
+    <div id="label"></div>
+    <script type="module" src="./scene-harness.ts"></script>
+  </body>
+</html>

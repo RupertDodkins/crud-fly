@@ -64,7 +64,13 @@ export interface Player {
  */
 export type Turn =
   | { readonly kind: 'serve'; readonly shooter: PlayerId; readonly attempt: 1 | 2 | 3 }
-  | { readonly kind: 'awaiting_shot'; readonly shooter: PlayerId; readonly deadlineTick: number }
+  | {
+      readonly kind: 'awaiting_shot';
+      readonly shooter: PlayerId;
+      readonly deadlineTick: number;
+      /** Present when the in-flight shot is a serve, so a miss is a serve fault rather than a lost life. */
+      readonly serveAttempt?: 1 | 2 | 3;
+    }
   | { readonly kind: 'in_play'; readonly lastShooter: PlayerId }
   | { readonly kind: 'resolving'; readonly outcome: RuleEvent }
   | { readonly kind: 'over'; readonly winner: PlayerId };
