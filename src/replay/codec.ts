@@ -90,6 +90,7 @@ function rules(x: unknown): CrudRules {
     stoppedSpeed: num(x, 'stoppedSpeed', p),
     shortEndDepth: num(x, 'shortEndDepth', p),
     minTravel: num(x, 'minTravel', p),
+    footSpotInset: num(x, 'footSpotInset', p),
     forbidShootingBackwards: bool(x, 'forbidShootingBackwards', p),
     forbidLongSideShots: bool(x, 'forbidLongSideShots', p),
     pocketPenalty,

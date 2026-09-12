@@ -5,18 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CRUD Fly</title>
     <style>
-      html, body { margin: 0; height: 100%; background: #193e35; color: #f8edc5; font-family: ui-monospace, Menlo, monospace; }
-      #app { display: grid; grid-template-columns: 1fr 320px; height: 100%; }
-      #stage { position: relative; min-width: 0; overflow: hidden; }
+      :root { --ink: #193e35; --cream: #f8edc5; --mint: #a8d8c6; --lime: #d9fd66; --pink: #ff8eb4; }
+      html, body { margin: 0; height: 100%; background: var(--ink); color: var(--cream); font-family: Menlo, Consolas, monospace; }
+      #app { display: grid; grid-template-columns: minmax(0, 1fr) 300px; height: 100%; }
+      #stage { position: relative; min-width: 0; min-height: 0; overflow: hidden; }
       #stage canvas { display: block; width: 100%; height: 100%; }
-      #hud { padding: 16px; overflow: auto; background: #0f2a24; font-size: 13px; }
-      #hud h1 { font-size: 12px; letter-spacing: .12em; color: #d9fd66; margin: 0 0 12px; }
-      #hud h2 { font-size: 14px; margin: 16px 0 8px; color: #f8edc5; }
-      #hud .big { font-size: 34px; line-height: 1.1; color: #fff; }
-      #hud .big small { font-size: 11px; letter-spacing: .1em; color: #87c9b1; margin-left: 6px; }
-      #hud ul { list-style: none; padding: 0; margin: 8px 0; color: #f34684; }
-      #hud li { margin: 2px 0; }
-      #hud .fine { color: #87c9b1; font-size: 11px; line-height: 1.4; margin-top: 24px; }
+      #hud { box-sizing: border-box; padding: 24px 20px; overflow: auto; background: #102b25; font-size: 13px; line-height: 1.55; font-variant-numeric: tabular-nums; }
+      #hud h1 { font-size: 12px; letter-spacing: .1em; color: var(--mint); margin: 0 0 20px; }
+      #hud h2 { font-size: 15px; margin: 24px 0 12px; color: var(--cream); }
+      #hud .big { font-size: 44px; line-height: 1.2; color: var(--lime); letter-spacing: -.04em; }
+      #hud .big small { font-size: 11px; letter-spacing: .08em; color: var(--mint); margin-left: 8px; }
+      #hud ul { list-style: none; padding: 12px 0; margin: 12px 0; border-top: 1px solid #36554a; color: var(--pink); }
+      #hud li { margin: 6px 0; }
+      #hud .fine { color: var(--mint); font-size: 12px; line-height: 1.6; margin-top: 24px; }
+      @media (max-aspect-ratio: 1/1) {
+        #app { grid-template-columns: 1fr; grid-template-rows: minmax(0, 1fr) auto; }
+        #hud { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 28px; padding: 24px 36px; max-height: 44vh; font-size: 16px; }
+        #hud h1, #hud h2, #hud ul, #hud .fine { grid-column: 1 / -1; margin: 0; }
+        #hud h1 { font-size: 14px; }
+        #hud h2 { font-size: 18px; }
+        #hud .big { font-size: 52px; }
+        #hud .big small { font-size: 14px; }
+        #hud ul:empty { display: none; }
+        #hud .fine { font-size: 14px; }
+      }
+      @media (max-width: 600px) {
+        #hud { padding: 16px; gap: 6px 12px; font-size: 12px; max-height: 48vh; }
+        #hud .big { font-size: 30px; }
+        #hud h1, #hud .big small, #hud .fine { font-size: 11px; }
+        #hud h2 { font-size: 14px; }
+      }
     </style>
   </head>
   <body>

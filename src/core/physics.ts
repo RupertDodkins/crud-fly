@@ -20,7 +20,8 @@ export const DEMO_PHYSICS: PhysicsParams = {
 /** Below this speed a rolling ball is snapped to rest so it cannot creep forever. */
 const STOP_EPS = 1e-4;
 
-export const FLY_WALK_SPEED = 1.2;
+/** Flies are fast: ball-in-hand means running the length of the table while the object ball rolls. */
+export const FLY_WALK_SPEED = 1.8;
 export const FLY_REACH = 0.08;
 const FLY_LUNGE_SPEED = 0.6;
 const AIM_SECONDS = 0.25;
@@ -129,20 +130,27 @@ function cushion(ball: Ball, table: Table, e: number): Ball {
   return { ...ball, pos: vec(x, y), vel: vec(vx, vy) };
 }
 
-/** One fixed step of ball motion. Pure. Deterministic for identical inputs (no Math.random, no Date). */
-export function stepBalls(cue: Ball, object: Ball, table: Table, params: PhysicsParams, tick: number): PhysicsResult {
+/**
+ * One fixed step of ball motion. Pure. Deterministic for identical inputs (no Math.random, no Date).
+ * `cueHeld`: the cue ball is in a fly's grasp; it is returned untouched and takes part in nothing
+ * (no rolling, no ball-ball contact, no cushions, no pockets). The session places it each tick.
+ */
+export function stepBalls(cue: Ball, object: Ball, table: Table, params: PhysicsParams, tick: number, cueHeld = false): PhysicsResult {
   const events: RuleEvent[] = [];
-  let c = roll(cue, params.rollingDecel);
-  let o = roll(object, params.rollingDecel);
+  const o = roll(object, params.rollingDecel);
+  if (cueHeld) {
+    const oP = pocketCheck(o, table);
+    if (oP.pocketed && !o.pocketed) events.push({ kind: 'pocket', ball: 'object', tick });
+    return { cue, object: cushion(oP, table, params.cushionRestitution), events };
+  }
+  const c = roll(cue, params.rollingDecel);
   const hit = collide(c, o, table.ballRadius, params.ballRestitution);
-  c = hit.a;
-  o = hit.b;
   if (hit.hit) events.push({ kind: 'contact', tick });
   // Pockets before cushions so a ball reaching a corner is captured rather than bounced.
-  const cP = pocketCheck(c, table);
-  if (cP.pocketed && !c.pocketed) events.push({ kind: 'pocket', ball: 'cue', tick });
-  const oP = pocketCheck(o, table);
-  if (oP.pocketed && !o.pocketed) events.push({ kind: 'pocket', ball: 'object', tick });
+  const cP = pocketCheck(hit.a, table);
+  if (cP.pocketed && !hit.a.pocketed) events.push({ kind: 'pocket', ball: 'cue', tick });
+  const oP = pocketCheck(hit.b, table);
+  if (oP.pocketed && !hit.b.pocketed) events.push({ kind: 'pocket', ball: 'object', tick });
   return {
     cue: cushion(cP, table, params.cushionRestitution),
     object: cushion(oP, table, params.cushionRestitution),
@@ -179,7 +187,11 @@ function walkToward(pos: Vec2, target: Vec2, maxStep: number): { pos: Vec2; head
   return { pos: vec(pos.x + dx * k, pos.y + dy * k), heading, arrived: false };
 }
 
-/** Move the fly body one step toward its target / through its phase machine. Returns whether the strike landed this tick. */
+/**
+ * Move the fly body one step toward its target / through its phase machine. Returns whether the strike landed this tick.
+ * While carrying the cue ball, aim turns the fly to face the throw and strike is the throw itself: the fly
+ * stays put and the strike always lands (the ball is in its grasp). Without the ball, strike is a lunge.
+ */
 export function stepFly(fly: FlyBody, target: Vec2 | null, cue: Ball, table: Table): { fly: FlyBody; struck: boolean } {
   const t = fly.phaseT + DT;
   switch (fly.phase) {
@@ -196,11 +208,15 @@ export function stepFly(fly: FlyBody, target: Vec2 | null, cue: Ball, table: Tab
       return { fly: { ...fly, pos: w.pos, heading: w.heading, phaseT: t }, struck: false };
     }
     case 'aim': {
-      const heading = Math.atan2(cue.pos.y - fly.pos.y, cue.pos.x - fly.pos.x);
+      const heading = fly.carrying && fly.shot ? fly.shot.angle : Math.atan2(cue.pos.y - fly.pos.y, cue.pos.x - fly.pos.x);
       if (t + T_EPS >= AIM_SECONDS) return { fly: { ...fly, heading, phase: 'strike', phaseT: 0 }, struck: false };
       return { fly: { ...fly, heading, phaseT: t }, struck: false };
     }
     case 'strike': {
+      if (fly.carrying) {
+        if (t + T_EPS >= STRIKE_SECONDS) return { fly: { ...fly, phase: 'recover', phaseT: 0 }, struck: true };
+        return { fly: { ...fly, phaseT: t }, struck: false };
+      }
       const gap = dist(fly.pos, cue.pos);
       const room = Math.max(0, gap - table.ballRadius);
       const w = room > 0 ? walkToward(fly.pos, cue.pos, Math.min(room, FLY_LUNGE_SPEED * DT)) : { pos: fly.pos, heading: fly.heading, arrived: true };
@@ -243,6 +259,7 @@ export function hashState(state: MatchState): string {
     q(p.fly.phaseT);
     q(p.fly.shot ? p.fly.shot.angle : -1);
     q(p.fly.shot ? p.fly.shot.force : -1);
+    q(p.fly.carrying ? 1 : 0);
   }
   const t = state.turn;
   switch (t.kind) {

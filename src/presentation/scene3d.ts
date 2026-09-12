@@ -4,6 +4,8 @@
  * world is replaced by the pool table in ./table.ts.
  */
 import * as T from 'three';
+import type { BrainView } from '../controllers/connectome-pilot';
+import { createNeuralActivity } from './neural-activity';
 import type { Frame, PlayerId, RuleEvent, Table, Vec2 } from '../core/model';
 import { animateFly, box, colors, makeFly, mat, mesh, sphere, type FlyRig } from './fly-rig';
 import { buildTable } from './table';
@@ -14,6 +16,7 @@ import { buildTable } from './table';
  * Reads Frame only. Never holds the live MatchState.
  */
 export interface Scene3D {
+  brain(view: BrainView): void;
   update(frame: Frame, dt: number): void;
   resize(w: number, h: number): void;
   readonly canvas: HTMLCanvasElement;
@@ -35,11 +38,11 @@ export function headingToRotationY(heading: number): number {
   return -heading - Math.PI / 2;
 }
 
-const FLY_LENGTH_IN_BALL_RADII = 3;
+const FLY_LENGTH_IN_BALL_RADII = 3.6;
 // Steep enough that a fly standing on the near side of the cue ball does not hide it.
-const CAMERA_ELEVATION = (66 * Math.PI) / 180;
+const CAMERA_ELEVATION = (55 * Math.PI) / 180;
 const CAMERA_DISTANCE = 5;
-const FRAME_MARGIN = 0.2;
+const FRAME_MARGIN = 0.16;
 const EFFECT_WINDOW_TICKS = 6;
 const FLASH_SECONDS = 0.3;
 const DEFAULT_TABLE = { length: 2.54, width: 1.27 };
@@ -59,7 +62,7 @@ interface FlyActor {
   flash: number;
 }
 
-export function createScene3D(container: HTMLElement): Scene3D {
+export function createScene3D(container: HTMLElement, detail = false): Scene3D {
   const renderer = new T.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.75));
   renderer.shadowMap.enabled = true;
@@ -71,17 +74,32 @@ export function createScene3D(container: HTMLElement): Scene3D {
   canvas.style.display = 'block';
   container.appendChild(canvas);
 
+  let neural: ReturnType<typeof createNeuralActivity> | undefined;
+  let neuralTexture: T.CanvasTexture | undefined;
+  const overlay = new T.Scene();
+  const overlayCamera = new T.OrthographicCamera(0, 1, 1, 0, -1, 1);
+  const neuralSprite = new T.Sprite(new T.SpriteMaterial({ depthTest: false }));
+  overlay.add(neuralSprite);
+  function brain(view: BrainView): void {
+    neuralTexture?.dispose();
+    neural = createNeuralActivity(view);
+    neuralTexture = new T.CanvasTexture(neural.canvas);
+    neuralTexture.colorSpace = T.SRGBColorSpace;
+    neuralSprite.material.map = neuralTexture;
+    neuralSprite.material.needsUpdate = true;
+  }
   const scene = new T.Scene();
   scene.background = new T.Color(colors.mint);
 
   scene.add(new T.HemisphereLight(0xd9f4ff, 0x8582ab, 1.85));
   const sun = new T.DirectionalLight(0xffe6b5, 3.0);
-  sun.position.set(-1.4, 2.7, -2.0);
+  sun.position.set(-0.7, 4.0, -0.8);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
+  sun.shadow.radius = 4;
   Object.assign(sun.shadow.camera, { left: -1.9, right: 1.9, top: 1.5, bottom: -1.5, near: 0.5, far: 8 });
   sun.shadow.bias = -0.0004;
-  sun.shadow.normalBias = 0.01;
+  sun.shadow.normalBias = 0.002;
   sun.target.position.set(0, 0, 0);
   scene.add(sun, sun.target);
   const rim = new T.DirectionalLight(0xbbe7ff, 1.1);
@@ -96,16 +114,25 @@ export function createScene3D(container: HTMLElement): Scene3D {
   let tableDims: { length: number; width: number } = DEFAULT_TABLE;
 
   function frameCamera(): void {
-    const halfL = tableDims.length / 2 + FRAME_MARGIN;
-    const halfW = tableDims.width / 2 + FRAME_MARGIN;
-    // Vertical extent of the tilted table on screen plus headroom for the flies and rails.
-    const needH = halfW * Math.sin(CAMERA_ELEVATION) + 0.12;
-    const hw = Math.max(halfL, needH * aspect);
+    const azimuth = (aspect < 1 ? 62 : 10) * Math.PI / 180;
+    camera.position.set(Math.sin(azimuth) * Math.cos(CAMERA_ELEVATION) * CAMERA_DISTANCE,
+      Math.sin(CAMERA_ELEVATION) * CAMERA_DISTANCE, Math.cos(azimuth) * Math.cos(CAMERA_ELEVATION) * CAMERA_DISTANCE);
+    camera.lookAt(0, 0, 0);
+    camera.updateMatrixWorld();
+    const right = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 0);
+    const up = new T.Vector3().setFromMatrixColumn(camera.matrixWorld, 1);
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const x of [-1, 1]) for (const z of [-1, 1]) for (const y of [-0.65, 0.13]) {
+      const corner = new T.Vector3(x * (tableDims.length / 2 + 0.08), y, z * (tableDims.width / 2 + 0.08));
+      const px = corner.dot(right), py = corner.dot(up);
+      minX = Math.min(minX, px); maxX = Math.max(maxX, px);
+      minY = Math.min(minY, py); maxY = Math.max(maxY, py);
+    }
+    const hw = Math.max((maxX - minX) / 2 + FRAME_MARGIN / 2, ((maxY - minY) / 2 + FRAME_MARGIN / 2) * aspect);
     const hh = hw / aspect;
-    camera.left = -hw;
-    camera.right = hw;
-    camera.top = hh;
-    camera.bottom = -hh;
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    camera.left = cx - hw; camera.right = cx + hw;
+    camera.top = cy + hh; camera.bottom = cy - hh;
     camera.updateProjectionMatrix();
   }
 
@@ -114,7 +141,7 @@ export function createScene3D(container: HTMLElement): Scene3D {
   const flies: FlyActor[] = [];
   const balls = {
     cue: mesh(scene, sphere, mat(colors.cream, 0.25, 0.05)),
-    object: mesh(scene, sphere, mat(colors.pink, 0.25, 0.05)),
+    object: mesh(scene, sphere, mat(0x15191b, 0.25, 0.05)),
   };
   const aimLine = mesh(scene, box, new T.MeshStandardMaterial({ color: colors.lime, emissive: colors.lime, emissiveIntensity: 0.4, roughness: 1 }));
   aimLine.castShadow = false;
@@ -146,10 +173,10 @@ export function createScene3D(container: HTMLElement): Scene3D {
       const m = particlePool.pop() ?? mesh(scene, box, color);
       m.material = mat(color);
       m.position.set(x, y, z);
-      m.scale.setScalar(0.006);
+      m.scale.setScalar(0.012);
       m.castShadow = false;
       scene.add(m);
-      particles.push({ mesh: m, vx: (Math.random() - 0.5) * 0.6, vy: 0.35 + Math.random() * 0.45, vz: (Math.random() - 0.5) * 0.6, life: 0.65 });
+      particles.push({ mesh: m, vx: (((i * 0.61803398875 + x * 0.37 + z * 0.13) % 1 + 1) % 1 - 0.5) * 0.6, vy: 0.35 + (i % 5) / 5 * 0.45, vz: (((i * 0.38196601125 + z * 0.29) % 1 + 1) % 1 - 0.5) * 0.6, life: 0.65 });
     }
   }
   function stepParticles(dt: number): void {
@@ -162,7 +189,7 @@ export function createScene3D(container: HTMLElement): Scene3D {
       p.mesh.position.z += p.vz * dt;
       p.mesh.rotation.x += dt * 5;
       p.mesh.rotation.z += dt * 7;
-      p.mesh.scale.setScalar(Math.max(0.0001, 0.009 * p.life));
+      p.mesh.scale.setScalar(Math.max(0.0001, 0.025 * p.life));
       if (p.life <= 0) {
         scene.remove(p.mesh);
         particlePool.push(p.mesh);
@@ -185,6 +212,11 @@ export function createScene3D(container: HTMLElement): Scene3D {
   }
   function applyEffect(frame: Frame, e: RuleEvent): void {
     switch (e.kind) {
+      case 'legal_shot': {
+        const fly = frame.players[e.player].fly;
+        burst(fly.pos.x, frame.table.ballRadius, fly.pos.y, colors.lime, 18);
+        break;
+      }
       case 'contact': {
         const p = toScene(frame.cue.pos, frame.table);
         burst(p.x, p.y, p.z, colors.cream, 12);
@@ -230,10 +262,18 @@ export function createScene3D(container: HTMLElement): Scene3D {
     m.position.set(p.x, p.y, p.z);
   }
 
-  let elapsed = 0;
+  let previousTick = -1;
 
   function update(frame: Frame, dt: number): void {
-    elapsed += dt;
+    const elapsed = frame.tick / 120;
+    dt = previousTick < 0 ? 0 : Math.max(0, (frame.tick - previousTick) / 120);
+    if (frame.tick < previousTick) {
+      for (const p of particles) { scene.remove(p.mesh); particlePool.push(p.mesh); }
+      particles.length = 0;
+      for (const f of flies) { f.prev = null; f.speed = 0; f.flash = 0; }
+      lastEffectTick = -1;
+    }
+    previousTick = frame.tick;
     ensureWorld(frame.table);
     const { table } = frame;
 
@@ -269,7 +309,27 @@ export function createScene3D(container: HTMLElement): Scene3D {
 
     fireEffects(frame);
     stepParticles(dt);
+    if (detail && flies[0]) {
+      const target = new T.Box3().setFromObject(flies[0].rig.body).getCenter(new T.Vector3());
+      camera.position.copy(target).add(new T.Vector3(0.24, 0.14, 0.25));
+      camera.lookAt(target);
+      camera.left = -0.15 * aspect; camera.right = 0.15 * aspect;
+      camera.top = 0.15; camera.bottom = -0.15;
+      camera.updateProjectionMatrix();
+    }
     renderer.render(scene, camera);
+    if (neural && neuralTexture) {
+      neural.draw();
+      neuralTexture.needsUpdate = true;
+      const width = Math.min(300, canvas.clientWidth * 0.34);
+      const w = width / canvas.clientWidth, h = width * 350 / 600 / canvas.clientHeight;
+      neuralSprite.scale.set(w, h, 1);
+      neuralSprite.position.set(0.018 + w / 2, 0.98 - h / 2, 0);
+      renderer.autoClear = false;
+      renderer.clearDepth();
+      renderer.render(overlay, overlayCamera);
+      renderer.autoClear = true;
+    }
   }
 
   function resize(w: number, h: number): void {
@@ -288,5 +348,5 @@ export function createScene3D(container: HTMLElement): Scene3D {
     resize(r.width, r.height);
   }).observe(container);
 
-  return { update, resize, canvas };
+  return { update, resize, canvas, brain };
 }

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { vec } from '../../src/core/model';
-import type { Ball } from '../../src/core/model';
+import type { Ball, Vec2 } from '../../src/core/model';
 import { DEMO_PHYSICS, standardTable, stepBalls, timeToStop } from '../../src/core/physics';
 
 const still = (x: number, y: number): Ball => ({ pos: vec(x, y), vel: vec(0, 0), pocketed: false });
@@ -45,6 +45,25 @@ describe('physics', () => {
     for (let tick = 0; tick < 120; tick++) ball = stepBalls(cue, ball, table, DEMO_PHYSICS, tick).object;
     expect(ball.vel.y).toBeLessThan(0);
     expect(Math.abs(ball.pos.y)).toBeLessThanOrEqual(table.width / 2 - table.ballRadius + 1e-9);
+  });
+
+  it('a held cue ball takes part in nothing: no rolling, no contact, no pocket, while the object still rolls', () => {
+    const table = standardTable();
+    // Cue overlapping the object and "moving" toward it; held, so nothing may happen to either from that.
+    const cue: Ball = { pos: vec(0.01, 0), vel: vec(1, 0), pocketed: false };
+    const object: Ball = { pos: vec(0.03, 0), vel: vec(0.5, 0), pocketed: false };
+    const out = stepBalls(cue, object, table, DEMO_PHYSICS, 5, true);
+    expect(out.events).toEqual([]);
+    expect(out.cue).toBe(cue);
+    expect(out.object.vel.x).toBeCloseTo(0.5 - DEMO_PHYSICS.rollingDecel / 120, 9);
+    expect(out.object.vel.y).toBe(0);
+    expect(out.object.pos.x).toBeGreaterThan(0.03);
+    // Same input with a free cue ball is a collision.
+    expect(stepBalls(cue, object, table, DEMO_PHYSICS, 5, false).events).toEqual([{ kind: 'contact', tick: 5 }]);
+    // A held cue ball sitting over a pocket is not captured.
+    const overPocket: Ball = { pos: table.pockets[0] as Vec2, vel: vec(0, 0), pocketed: false };
+    expect(stepBalls(overPocket, still(0, 0), table, DEMO_PHYSICS, 6, true).cue.pocketed).toBe(false);
+    expect(stepBalls(overPocket, still(0, 0), table, DEMO_PHYSICS, 6, false).cue.pocketed).toBe(true);
   });
 
   it('timeToStop is speed over deceleration', () => {

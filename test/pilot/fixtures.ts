@@ -29,22 +29,34 @@ export interface ObsOverrides {
   readonly myFly?: FlyBody;
   readonly turn?: Turn;
   readonly me?: 0 | 1;
+  /** Defaults to "the cue ball is within grasp distance of the fly", which is the engine's own invariant for a held ball. */
+  readonly carrying?: boolean;
 }
 
-/** Player 0 standing at the -x short end, heading +x (toward the table centre). */
+/** A held cue ball sits 0.04 m ahead of its fly; anything within this of the fly reads as in hand. */
+const GRASP = 0.06;
+
+/** Player 0 standing in the x<0 end band, heading +x (toward the table centre), cue ball in hand. */
 export function observation(o: ObsOverrides = {}): Observation {
   const me = o.me ?? 0;
+  const cue = o.cue ?? ball({ x: -1.08, y: 0 });
+  const myFly = o.myFly ?? fly({ x: -1.1, y: 0 }, 0);
+  const carrying = o.carrying ?? Math.hypot(cue.pos.x - myFly.pos.x, cue.pos.y - myFly.pos.y) <= GRASP;
   return {
     me,
     tick: 100,
     table: TABLE,
-    cue: o.cue ?? ball({ x: -1.08, y: 0 }),
+    cue,
     object: o.object ?? ball({ x: 0.2, y: 0.1 }, { x: -0.6, y: 0 }),
-    myFly: o.myFly ?? fly({ x: -1.1, y: 0 }, 0),
+    myFly: carrying ? { ...myFly, carrying: true } : myFly,
     myLives: 3,
     theirLives: 3,
     turn: o.turn ?? { kind: 'awaiting_shot', shooter: me, deadlineTick: 500 },
-    legalZone: { xMin: -1.27, xMax: -1.0 },
+    legalEnds: [
+      { xMin: -1.27, xMax: -0.889 },
+      { xMin: 0.889, xMax: 1.27 },
+    ],
+    carrying,
     objectStopsIn: 4,
   };
 }

@@ -22,11 +22,15 @@ export function buildTable(table: Table): T.Group {
   mesh(g, box, mat(CLOTH_COLOR, 0.92), [0, -CLOTH_THICKNESS / 2, 0], [L, CLOTH_THICKNESS, W]);
 
   const rail = mat(colors.cream, 0.6);
+  const mouth = table.pocketRadius * 1.1;
   for (const sz of [-1, 1]) {
-    mesh(g, box, rail, [0, RAIL_HEIGHT / 2, sz * (W / 2 + RAIL_WIDTH / 2)], [outerL, RAIL_HEIGHT, RAIL_WIDTH]);
+    for (const sx of [-1, 1]) {
+      const span = L / 2 - 2 * mouth;
+      mesh(g, box, rail, [sx * L / 4, RAIL_HEIGHT / 2, sz * (W / 2 + RAIL_WIDTH / 2)], [span, RAIL_HEIGHT, RAIL_WIDTH]);
+    }
   }
   for (const sx of [-1, 1]) {
-    mesh(g, box, rail, [sx * (L / 2 + RAIL_WIDTH / 2), RAIL_HEIGHT / 2, 0], [RAIL_WIDTH, RAIL_HEIGHT, W]);
+    mesh(g, box, rail, [sx * (L / 2 + RAIL_WIDTH / 2), RAIL_HEIGHT / 2, 0], [RAIL_WIDTH, RAIL_HEIGHT, W - 2 * mouth]);
   }
 
   mesh(g, box, mat(colors.dark, 0.7), [0, -CLOTH_THICKNESS - APRON_HEIGHT / 2, 0], [outerL, APRON_HEIGHT, outerW]);
@@ -38,15 +42,15 @@ export function buildTable(table: Table): T.Group {
     }
   }
 
-  // Pocket cups run from below the cloth to just above the rails so corner pockets read as holes cut through the rail.
+  // Dark pocket mouths sit at cloth height; the rails leave an actual opening.
   const pocketMat = mat(0x0b1a16, 0.95);
-  const cupH = CLOTH_THICKNESS + RAIL_HEIGHT + 0.004;
+  const cupH = CLOTH_THICKNESS + 0.002;
   for (const p of table.pockets) {
-    const cup = mesh(g, cylinder, pocketMat, [p.x, cupH / 2 - CLOTH_THICKNESS, p.y], [table.pocketRadius, cupH, table.pocketRadius]);
+    const cup = mesh(g, cylinder, pocketMat, [p.x, 0.002 - cupH / 2, p.y], [table.pocketRadius, cupH, table.pocketRadius]);
     cup.castShadow = false;
   }
 
-  const zone = new T.MeshStandardMaterial({ color: colors.lime, transparent: true, opacity: 0.16, roughness: 1, depthWrite: false });
+  const zone = new T.MeshStandardMaterial({ color: colors.lime, transparent: true, opacity: 0.09, roughness: 1, depthWrite: false });
   const depth = L * LEGAL_ZONE_DEPTH;
   for (const sx of [-1, 1]) {
     const band = mesh(g, box, zone, [sx * (L / 2 - depth / 2), 0.0015, 0], [depth, 0.001, W]);

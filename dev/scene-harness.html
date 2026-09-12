@@ -8,12 +8,15 @@
       html, body { margin: 0; height: 100%; background: #193e35; overflow: hidden; }
       #stage { position: fixed; inset: 0; }
       #stage canvas { display: block; }
-      #label { position: fixed; left: 12px; top: 10px; color: #f8edc5; font: 13px ui-monospace, Menlo, monospace; pointer-events: none; }
+      #label { position: fixed; left: 12px; top: 10px; color: #193e35; font: 13px ui-monospace, Menlo, monospace; pointer-events: none; }
+      #controls { position: fixed; bottom: 12px; left: 12px; display: flex; gap: 8px; }
+      #controls button, #controls a { padding: 10px 16px; background: #193e35; color: #f8edc5; border: 0; font: 13px Menlo, monospace; border-radius: 4px; cursor: pointer; }
     </style>
   </head>
   <body>
     <div id="stage"></div>
     <div id="label"></div>
+    <nav id="controls"><button id="toggle">Pause</button><button id="step">Step 1 tick</button><a href="?replay=hero">Hero replay</a></nav>
     <script type="module" src="./scene-harness.ts"></script>
   </body>
 </html>

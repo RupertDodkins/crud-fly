@@ -1,5 +1,13 @@
-// Hand-authored Frame fixture driving createScene3D without the core session (which is not implemented yet).
+// Isolated fixtures and frozen hero replay for presentation review.
 import type { Ball, FlyBody, FlyPhase, Frame, Player, RuleEvent, Table, Vec2 } from '../src/core/model';
+import { createComposite } from '../src/presentation/composite';
+import { createConnectomePilot, parseCircuit } from '../src/controllers/connectome-pilot';
+import circuit from '../src/brain/flight-v1.json';
+import { createHeuristic } from '../src/controllers/heuristic';
+import { DEMO_RULES, rulesInForce } from '../src/core/rules';
+import { DEMO_PHYSICS } from '../src/core/physics';
+import { parseTape } from '../src/replay/codec';
+import { createSession, replayController } from '../src/core/session';
 import { createScene3D } from '../src/presentation/scene3d';
 
 const table: Table = {
@@ -101,7 +109,7 @@ function stepScript(): void {
       break;
     case 'approach': {
       s.fly.heading = Math.atan2(toCue.y, toCue.x);
-      const standOff = table.ballRadius * 2.2;
+      const standOff = 0.08;
       if (dist <= standOff + 0.002) {
         enter('aim');
       } else {
@@ -115,8 +123,11 @@ function stepScript(): void {
       if (s.phaseT > PHASE_LENGTH.aim) enter('strike');
       break;
     case 'strike':
-      if (!contactSeen && s.phaseT > 0.08) {
+      { const step = Math.min(Math.max(0, dist - table.ballRadius), 0.7 * DT);
+        s.fly.pos = { x: s.fly.pos.x + Math.cos(s.fly.heading) * step, y: s.fly.pos.y + Math.sin(s.fly.heading) * step }; }
+      if (!contactSeen && s.phaseT >= 0.12) {
         contactSeen = true;
+        s.log.push({ kind: 'legal_shot', player: 0, tick: s.tick });
         const a = shotAngle();
         s.cue.vel = { x: Math.cos(a) * 1.9, y: Math.sin(a) * 1.9 };
       }
@@ -190,29 +201,72 @@ function frame(): Frame {
 
 const stage = document.getElementById('stage')!;
 const label = document.getElementById('label')!;
-const scene = createScene3D(stage);
+const scene = createScene3D(stage, new URLSearchParams(location.search).has('detail'));
 
 // ?t=SECONDS fast-forwards the script so a specific phase can be screenshotted deterministically; ?pause=1 freezes there.
 const params = new URL(location.href).searchParams;
-const paused = params.has('pause');
-const skipSeconds = Number(params.get('t') ?? 0);
-if (skipSeconds > 0) {
-  for (let i = 0; i < Math.round(skipSeconds * HZ); i++) stepScript();
-  for (let i = 0; i < 20; i++) scene.update(frame(), 1 / 60);
+let paused = params.has('pause');
+let replay: ReturnType<typeof createSession> | null = null;
+if (params.has('replay')) {
+  const tape = parseTape(await (await fetch('/replays/hero.json')).json());
+  const commands: [Map<number, import('../src/core/model').PlayerCommand>, Map<number, import('../src/core/model').PlayerCommand>] = [new Map(), new Map()];
+  for (const c of tape.commands) commands[c.player].set(c.tick, c.cmd);
+  replay = createSession({ seed: tape.seed, rules: tape.rules, physics: tape.physics, names: tape.names,
+    controllers: [replayController(tape.controllerIds[0], commands[0]), replayController(tape.controllerIds[1], commands[1])] });
 }
+const pilot = params.has('live') ? createConnectomePilot('connectome', parseCircuit(circuit)) : null;
+if (pilot) scene.brain(pilot.brain());
+if (pilot) replay = createSession({ seed: 42, rules: DEMO_RULES, physics: DEMO_PHYSICS, names: ['FLY', 'OPP'], controllers: [pilot, createHeuristic('heuristic', 42 * 31 + 2)] });
+const current = () => replay?.frame() ?? frame();
+const step = () => { if (replay) replay.step(); else stepScript(); };
+const skipSeconds = Math.max(0, Number(params.get('t') ?? 0));
+for (let i = 0; i < Math.round(skipSeconds * HZ); i++) { step(); scene.update(current(), DT); }
 
+const toggle = document.getElementById('toggle')!;
+toggle.textContent = paused ? 'Play' : 'Pause';
+toggle.addEventListener('click', () => { paused = !paused; toggle.textContent = paused ? 'Play' : 'Pause'; });
+document.getElementById('step')!.addEventListener('click', () => { paused = true; toggle.textContent = 'Play'; step(); scene.update(current(), DT); });
+
+let recorder: MediaRecorder | null = null;
+const composite = params.has('capture') ? createComposite() : null;
+if (composite) {
+  stage.style.width = '960px'; stage.style.height = '720px'; scene.resize(960, 720);
+  composite.canvas.style.cssText = 'position:fixed;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none';
+  document.body.appendChild(composite.canvas);
+}
+if (params.has('capture')) {
+  const chunks: Blob[] = [];
+  recorder = new MediaRecorder((composite?.canvas ?? scene.canvas).captureStream(60), { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 10_000_000 });
+  recorder.ondataavailable = e => chunks.push(e.data);
+  recorder.onstop = () => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result !== 'string') return;
+      const link = document.createElement('a'); link.href = reader.result; link.download = 'crud-fly-visual-candidate.webm'; link.textContent = 'Download clip';
+      document.getElementById('controls')!.appendChild(link);
+    };
+    reader.readAsDataURL(new Blob(chunks, { type: 'video/webm' }));
+  };
+  recorder.start();
+}
 let last = performance.now();
 let acc = 0;
+const captureEnd = skipSeconds + Number(params.get('seconds') ?? 12);
 function loop(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   acc += dt;
-  while (acc >= DT) {
-    if (!paused) stepScript();
-    acc -= DT;
-  }
-  scene.update(frame(), dt);
-  label.textContent = `tick ${s.tick}  phase ${s.phase} ${s.phaseT.toFixed(2)}s  log ${s.log.length}`;
+  while (acc >= DT) { if (!paused) step(); acc -= DT; }
+  const f = current();
+  scene.update(f, dt);
+  composite?.draw(scene.canvas, f, {
+    title: pilot ? 'Simulated neural activity' : 'Frozen hero replay', telemetry: pilot?.telemetry() ?? null,
+    rulesInForce: rulesInForce(DEMO_RULES), totalRules: 47, startingLives: 3,
+    logTail: f.log.filter(e => e.kind === 'life_lost' || e.kind === 'pocket').slice(-4).map(e => e.kind === 'life_lost' ? `LIFE LOST ${f.players[e.player].name}: ${e.reason.replace(/_/g, ' ')}` : e.kind === 'pocket' ? `POCKET: ${e.ball} ball` : ''),
+    finePrint: 'Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.',
+  });
+  label.textContent = `tick ${f.tick}  phase ${f.players[0].fly.phase} ${f.players[0].fly.phaseT.toFixed(3)}s  log ${f.log.length}`;
+  if (recorder?.state === 'recording' && (f.tick / HZ >= captureEnd || replay?.done())) { recorder.stop(); paused = true; }
   requestAnimationFrame(loop);
 }
 requestAnimationFrame(loop);

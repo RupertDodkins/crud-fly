@@ -34,15 +34,22 @@ export interface Table {
 
 export type FlyPhase = 'idle' | 'approach' | 'aim' | 'strike' | 'recover';
 
-/** The fly's gameplay body. It must physically reach the cue ball; the engine applies the impulse on contact. */
+/**
+ * The fly's gameplay body. Crud is ball-in-hand: the shooter fetches the cue ball wherever it is,
+ * carries it to either short end, and throws. The engine grabs the ball when the fly reaches it on
+ * its turn, moves the held ball with the fly, and releases it with the shot velocity when strike lands.
+ */
 export interface FlyBody {
   readonly pos: Vec2;
   readonly heading: number;
+  /** `approach` covers both fetching the cue ball and carrying it to an end; see `carrying`. */
   readonly phase: FlyPhase;
   /** Seconds elapsed in the current phase. */
   readonly phaseT: number;
-  /** Set during aim/strike; the engine converts this to a cue-ball impulse when strike lands. */
+  /** Set during aim/strike; the engine converts this to the cue-ball release velocity when strike lands. */
   readonly shot: Shot | null;
+  /** True while the cue ball is in this fly's grasp. Absent means false. */
+  readonly carrying?: boolean;
 }
 
 export interface Shot {
@@ -78,15 +85,20 @@ export type Turn =
 export type RuleEvent =
   | { readonly kind: 'life_lost'; readonly player: PlayerId; readonly reason: LifeLostReason; readonly tick: number }
   | { readonly kind: 'serve_fault'; readonly player: PlayerId; readonly attempt: number; readonly tick: number }
-  | { readonly kind: 'legal_shot'; readonly player: PlayerId; readonly tick: number }
-  | { readonly kind: 'contact'; readonly tick: number }
-  | { readonly kind: 'pocket'; readonly ball: 'cue' | 'object'; readonly tick: number }
+  /** `pos` is the cue-ball release point. */
+  | { readonly kind: 'legal_shot'; readonly player: PlayerId; readonly tick: number; readonly pos?: Vec2 }
+  /** `pos` is the impact point between ball centres. */
+  | { readonly kind: 'contact'; readonly tick: number; readonly pos?: Vec2 }
+  /** `pos` is the pocket centre. */
+  | { readonly kind: 'pocket'; readonly ball: 'cue' | 'object'; readonly tick: number; readonly pos?: Vec2 }
   | { readonly kind: 'match_over'; readonly winner: PlayerId; readonly tick: number };
 
 /** Each reason is one line of the HUD rule log and one row of the RULES IN FORCE counter. */
 export type LifeLostReason =
   | 'object_ball_stopped'
   | 'object_ball_pocketed'
+  /** Object ball travelled under six inches after your hit (a dead ball). */
+  | 'object_short_travel'
   | 'shot_from_long_side'
   | 'no_contact'
   | 'three_serve_faults'
@@ -123,8 +135,10 @@ export interface Observation {
   readonly myLives: number;
   readonly theirLives: number;
   readonly turn: Turn;
-  /** Legal shooting stance: the short-end region for this player. */
-  readonly legalZone: { readonly xMin: number; readonly xMax: number };
+  /** Both short-end regions. Any shooter may throw from either. */
+  readonly legalEnds: readonly [{ readonly xMin: number; readonly xMax: number }, { readonly xMin: number; readonly xMax: number }];
+  /** True when this fly holds the cue ball. */
+  readonly carrying: boolean;
   /** Seconds until the object ball stops at current deceleration. Infinity if not rolling. */
   readonly objectStopsIn: number;
 }

@@ -1,22 +1,36 @@
 import type { Ball, Controller, Observation, PlayerCommand, Vec2 } from '../core/model';
 import { vec } from '../core/model';
-import { activeShooter, endSign, unit01, xorshift32 } from '../core/rules';
+import { CARRY_OFFSET, isTurnOf, unit01, xorshift32 } from '../core/rules';
 
-/** Stand this far behind the cue ball, along the line away from the object ball. */
-const STANCE_OFFSET = 0.07;
-const ZONE_MARGIN = 0.03;
-const ARRIVED = 0.05;
-/** Close enough to the cue ball that the strike lunge will reach it. */
-const NEAR_CUE = 0.13;
-/** The controller cannot see rules; these mirror DEMO_RULES for prediction only. */
+type Zone = Observation['legalEnds'][number];
+
+/** Stop issuing new move targets once this close. */
+const ARRIVED = 0.02;
+/** Keep this far off the side cushions when standing in an end band. */
+const SIDE_MARGIN = 0.06;
+/** Waiting flies stand off the centre line so they are not in the throwing lane. */
+const WAIT_Y = 0.35;
+/** The controller cannot see rules or physics; these mirror the demo values for prediction only. */
 const ASSUMED_MAX_SHOT_SPEED = 6;
 const ASSUMED_DECEL = 0.35;
+const ASSUMED_WALK_SPEED = 1.8;
 /** Aim (0.25 s) + strike (0.12 s): the object ball keeps moving between deciding and releasing the cue ball. */
 const STRIKE_LATENCY = 0.37;
 const SHOOTABLE_OBJECT_SPEED = 0.06;
+/** Cue ball slower than this is treated as resting when fetching it. */
+const RESTING_CUE_SPEED = 0.05;
+/** Longest intercept lead when chasing a rolling cue ball, seconds. */
+const MAX_CHASE_LEAD = 1.0;
+/** Don't carry the ball to an end the object ball is already parked in (expanded by this margin). */
+const OBJECT_END_MARGIN = 0.1;
+/** My own throw is still in flight and moving away: stand and watch rather than sprint after it. */
+const IN_FLIGHT_SPEED = 1.0;
 const FORCE_BASE = 0.35;
 const FORCE_PER_METRE = 0.1;
-const POCKET_WINDOW = (15 * Math.PI) / 180;
+/** Only try a pocket when the cut (object-to-pocket line vs cue line) is this shallow. */
+const MAX_CUT = (30 * Math.PI) / 180;
+/** Aim a little inside the true ghost ball so a thin cut still makes contact under aim noise. */
+const GHOST_FRACTION = 0.85;
 /** 0.04 rad (the original default) missed a 5.7 cm ball from 1.6 m about half the time. */
 const DEFAULT_AIM_NOISE = 0.012;
 
@@ -39,16 +53,22 @@ function clamp(x: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, x));
 }
 
-/** Shared by both controllers: where to stand. Pure. */
-export function stanceFor(obs: Observation): PlayerCommand {
-  const { cue, object, legalZone, myFly, table } = obs;
-  const toward = vec(-endSign(obs.me), 0);
-  const dir = object.pocketed ? toward : unit(sub(object.pos, cue.pos), toward);
-  const target = vec(
-    clamp(cue.pos.x - dir.x * STANCE_OFFSET, legalZone.xMin + ZONE_MARGIN, legalZone.xMax - ZONE_MARGIN),
-    clamp(cue.pos.y - dir.y * STANCE_OFFSET, -table.width / 2, table.width / 2),
-  );
-  if (len(sub(myFly.pos, target)) <= ARRIVED) return WAIT;
+function centre(z: Zone): number {
+  return (z.xMin + z.xMax) / 2;
+}
+
+function inZone(z: Zone, x: number, margin = 0): boolean {
+  return x >= z.xMin - margin && x <= z.xMax + margin;
+}
+
+function clampToTable(p: Vec2, obs: Observation): Vec2 {
+  const hx = obs.table.length / 2 - obs.table.ballRadius;
+  const hy = obs.table.width / 2 - obs.table.ballRadius;
+  return vec(clamp(p.x, -hx, hx), clamp(p.y, -hy, hy));
+}
+
+function moveTo(obs: Observation, target: Vec2): PlayerCommand {
+  if (len(sub(obs.myFly.pos, target)) <= ARRIVED) return WAIT;
   return { kind: 'move', target };
 }
 
@@ -69,38 +89,96 @@ function travelTime(s: number, v0: number): number {
   return (v0 - Math.sqrt(disc)) / ASSUMED_DECEL;
 }
 
+/** Not my clock: stand at the end farther from the cue ball, off the centre line, out of the shooter's way. */
+function waitingSpot(obs: Observation): Vec2 {
+  const end = obs.cue.pos.x >= 0 ? 0 : 1;
+  const y = obs.myFly.pos.y >= 0 ? WAIT_Y : -WAIT_Y;
+  return clampToTable(vec(centre(obs.legalEnds[end]), y), obs);
+}
+
+/** My clock, no ball: run to where the cue ball will be when I get there. The engine grabs it within reach. */
+function chaseTarget(obs: Observation): Vec2 {
+  const { cue, myFly } = obs;
+  const speed = len(cue.vel);
+  if (speed < RESTING_CUE_SPEED) return cue.pos;
+  const away = sub(cue.pos, myFly.pos);
+  const receding = cue.vel.x * away.x + cue.vel.y * away.y > 0;
+  if (obs.turn.kind === 'awaiting_shot' && speed > IN_FLIGHT_SPEED && receding) return myFly.pos;
+  const stopsIn = speed / ASSUMED_DECEL;
+  let target = cue.pos;
+  for (let i = 0; i < 2; i++) {
+    const lead = clamp(len(sub(target, myFly.pos)) / ASSUMED_WALK_SPEED, 0, MAX_CHASE_LEAD);
+    target = advance(cue, lead, stopsIn);
+  }
+  return clampToTable(target, obs);
+}
+
+/** Seconds ahead to look when judging whether the object ball is heading into an end band. */
+const END_LOOKAHEAD = 1.0;
+
+/**
+ * Ball in hand: the nearer short end, unless the object ball is parked in it or about to roll into it
+ * (a throw from there would be sideways or backwards); keep my lane (y). `avoid` forces the other end.
+ */
+function carryTarget(obs: Observation): { end: 0 | 1; target: Vec2 } {
+  const { legalEnds, myFly, object, table } = obs;
+  const byDistance = ([0, 1] as const).slice().sort((a, b) => Math.abs(myFly.pos.x - centre(legalEnds[a])) - Math.abs(myFly.pos.x - centre(legalEnds[b])));
+  let end = byDistance[0] as 0 | 1;
+  const soon = advance(object, END_LOOKAHEAD, obs.objectStopsIn);
+  const objectIn = (z: Zone): boolean => !object.pocketed && (inZone(z, object.pos.x, OBJECT_END_MARGIN) || inZone(z, soon.x, OBJECT_END_MARGIN));
+  if (objectIn(legalEnds[end])) end = byDistance[1] as 0 | 1;
+  const y = clamp(myFly.pos.y, -(table.width / 2 - SIDE_MARGIN), table.width / 2 - SIDE_MARGIN);
+  return { end, target: vec(centre(legalEnds[end]), y) };
+}
+
+/** A throw from a short end must head into the table; a sideways/backwards fold is a certain miss. */
+function facesTable(angle: number, flyX: number): boolean {
+  return Math.cos(angle) * -Math.sign(flyX) > 1e-6;
+}
+
+/** Where the ball leaves the hand: CARRY_OFFSET ahead of the fly once it has turned toward the object ball. */
+function releasePoint(obs: Observation): Vec2 {
+  const fly = obs.myFly;
+  const toward = unit(sub(obs.object.pos, fly.pos), vec(fly.pos.x <= 0 ? 1 : -1, 0));
+  return vec(fly.pos.x + toward.x * CARRY_OFFSET, fly.pos.y + toward.y * CARRY_OFFSET);
+}
+
 function planShot(obs: Observation, noise: number): { shot: { angle: number; force: number }; pocketAim: boolean } {
-  const { cue, object, table } = obs;
-  const force = Math.min(1, FORCE_BASE + FORCE_PER_METRE * len(sub(object.pos, cue.pos)));
+  const { object, table } = obs;
+  const origin = releasePoint(obs);
+  const force = Math.min(1, FORCE_BASE + FORCE_PER_METRE * len(sub(object.pos, origin)));
   const cueSpeed = force * ASSUMED_MAX_SHOT_SPEED;
   let predicted = object.pos;
-  let t = travelTime(len(sub(object.pos, cue.pos)), cueSpeed);
+  let t = travelTime(len(sub(object.pos, origin)), cueSpeed);
   for (let i = 0; i < 2; i++) {
     predicted = advance(object, STRIKE_LATENCY + t, obs.objectStopsIn);
-    t = travelTime(len(sub(predicted, cue.pos)), cueSpeed);
+    t = travelTime(len(sub(predicted, origin)), cueSpeed);
   }
-  const lineToObject = unit(sub(predicted, cue.pos), vec(-endSign(obs.me), 0));
+  // The object ball is coming at my end and the intercept lands behind me: meet it where it is instead.
+  if (!facesTable(Math.atan2(predicted.y - origin.y, predicted.x - origin.x), origin.x)) predicted = object.pos;
+  const lineToObject = unit(sub(predicted, origin), vec(origin.x <= 0 ? 1 : -1, 0));
   let aimPoint = predicted;
   let bestPocketDist = Infinity;
   for (const pocket of table.pockets) {
     const toPocket = unit(sub(pocket, predicted), lineToObject);
-    if (toPocket.x * lineToObject.x + toPocket.y * lineToObject.y <= 0) continue;
-    const ghost = vec(predicted.x - toPocket.x * 2 * table.ballRadius, predicted.y - toPocket.y * 2 * table.ballRadius);
-    const lineToGhost = unit(sub(ghost, cue.pos), lineToObject);
-    const cos = lineToGhost.x * lineToObject.x + lineToGhost.y * lineToObject.y;
+    const cut = toPocket.x * lineToObject.x + toPocket.y * lineToObject.y;
+    if (cut < Math.cos(MAX_CUT)) continue;
+    const offset = GHOST_FRACTION * 2 * table.ballRadius;
+    const ghost = vec(predicted.x - toPocket.x * offset, predicted.y - toPocket.y * offset);
     const d = len(sub(pocket, predicted));
-    if (cos >= Math.cos(POCKET_WINDOW) && d < bestPocketDist) {
+    if (d < bestPocketDist) {
       bestPocketDist = d;
       aimPoint = ghost;
     }
   }
-  const angle = Math.atan2(aimPoint.y - cue.pos.y, aimPoint.x - cue.pos.x) + noise;
+  const angle = Math.atan2(aimPoint.y - origin.y, aimPoint.x - origin.x) + noise;
   return { shot: { angle, force }, pocketAim: bestPocketDist < Infinity };
 }
 
 /**
- * Phase 1 fly and the permanent opponent. Walk to the legal short end, wait for a shootable object
- * ball, aim at its predicted position, shoot with force proportional to distance, with a small seeded
+ * Phase 1 fly and the permanent opponent. Ball-in-hand Crud: when it is not my clock, wait at the far
+ * end; when it is, fetch the cue ball wherever it lies, carry it to the nearer short end, and throw at
+ * the object ball's predicted position with force proportional to distance and a small seeded
  * imperfection so it is not a laser. No learning, and labelled as such.
  */
 export function createHeuristic(id: string, seed: number, opts?: { readonly aimNoise?: number }): Controller {
@@ -111,10 +189,12 @@ export function createHeuristic(id: string, seed: number, opts?: { readonly aimN
     id,
     label: 'heuristic',
     decide(obs: Observation): PlayerCommand {
-      if (activeShooter(obs.turn) !== obs.me) return stanceFor(obs);
       const fly = obs.myFly;
       if (fly.shot !== null || (fly.phase !== 'idle' && fly.phase !== 'approach')) return WAIT;
-      if (len(sub(fly.pos, obs.cue.pos)) > NEAR_CUE) return stanceFor(obs);
+      if (obs.turn.kind === 'resolving' || obs.turn.kind === 'over') return WAIT;
+      if (!isTurnOf(obs.turn, obs.me)) return moveTo(obs, waitingSpot(obs));
+      if (!obs.carrying) return moveTo(obs, chaseTarget(obs));
+      if (!obs.legalEnds.some((z) => inZone(z, fly.pos.x))) return moveTo(obs, carryTarget(obs).target);
       const shootable = !obs.object.pocketed && (obs.turn.kind === 'serve' || len(obs.object.vel) > SHOOTABLE_OBJECT_SPEED);
       if (!shootable) return WAIT;
       rng = xorshift32(rng);

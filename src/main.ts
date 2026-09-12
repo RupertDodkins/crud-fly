@@ -3,7 +3,7 @@ import { DEMO_RULES, rulesInForce } from './core/rules';
 import { DEMO_PHYSICS, DT } from './core/physics';
 import { createSession } from './core/session';
 import { createHeuristic } from './controllers/heuristic';
-import { createConnectomePilot, parseCircuit } from './controllers/connectome-pilot';
+import { createConnectomePilot, parseCircuit, type BrainView } from './controllers/connectome-pilot';
 import circuitJson from './brain/flight-v1.json';
 import { drawDebug } from './presentation/debug2d';
 import { createScene3D } from './presentation/scene3d';
@@ -51,6 +51,10 @@ if (view2d) {
 } else {
   const scene = createScene3D(stage);
   canvas = scene.canvas;
+  // Optional presentation hook: if the scene exposes `brain(view)`, it receives the read-only per-neuron view once.
+  // The view has neuron IDs and live rates and no positions; any layout drawn from it must be labelled schematic.
+  const withBrain = scene as unknown as { brain?: (view: BrainView) => void };
+  if (pilot && typeof withBrain.brain === 'function') withBrain.brain(pilot.brain());
   addEventListener('resize', () => scene.resize(stage.clientWidth, stage.clientHeight));
   render = (frame, dt) => scene.update(frame, dt);
 }

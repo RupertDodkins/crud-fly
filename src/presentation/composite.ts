@@ -30,7 +30,8 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
   canvas.width = W;
   canvas.height = H;
   const ctx = canvas.getContext('2d')!;
-  const mono = 'ui-monospace, Menlo, monospace';
+  const mono = 'Menlo, Consolas, monospace';
+  const trace: { tick: number; left: number; right: number }[] = [];
 
   function wrap(text: string, x: number, y: number, maxWidth: number, lineHeight: number): number {
     const words = text.split(' ');
@@ -69,19 +70,19 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
     y += 30;
     const t = hud.telemetry;
     if (t) {
-      ctx.fillStyle = '#fff';
-      ctx.font = `600 40px ${mono}`;
+      ctx.fillStyle = lime;
+      ctx.font = `600 44px ${mono}`;
       ctx.fillText(t.dnLeft.toFixed(2), x, y + 8);
       ctx.fillStyle = mint;
       ctx.font = `11px ${mono}`;
-      ctx.fillText('DN LEFT', x + 130, y + 8);
+      ctx.fillText('DN LEFT', x + 145, y + 8);
       y += 46;
-      ctx.fillStyle = '#fff';
-      ctx.font = `600 40px ${mono}`;
+      ctx.fillStyle = lime;
+      ctx.font = `600 44px ${mono}`;
       ctx.fillText(t.dnRight.toFixed(2), x, y + 8);
       ctx.fillStyle = mint;
       ctx.font = `11px ${mono}`;
-      ctx.fillText('DN RIGHT', x + 130, y + 8);
+      ctx.fillText('DN RIGHT', x + 145, y + 8);
       y += 36;
       ctx.fillStyle = cream;
       ctx.font = `13px ${mono}`;
@@ -91,6 +92,17 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
       y += 20;
       ctx.fillText(`activity ${t.activity.toFixed(1)}`, x, y);
       y += 34;
+      if (trace.length && frame.tick < trace[trace.length - 1]!.tick) trace.length = 0;
+      if (trace[trace.length - 1]?.tick !== frame.tick) trace.push({ tick: frame.tick, left: t.dnLeft, right: t.dnRight });
+      while (trace.length > 120) trace.shift();
+      ctx.fillStyle = '#193e35'; ctx.fillRect(x, y, HUD_W - 40, 52);
+      const peak = Math.max(1, ...trace.flatMap(p => [Math.abs(p.left), Math.abs(p.right)]));
+      for (const side of ['left', 'right'] as const) {
+        ctx.strokeStyle = side === 'left' ? lime : mint; ctx.lineWidth = 1.5; ctx.beginPath();
+        trace.forEach((p, i) => { const px = x + i / 119 * (HUD_W - 40), py = y + 46 - p[side] / peak * 40; if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py); });
+        ctx.stroke();
+      }
+      y += 80;
     }
     const [a, b] = frame.players;
     const lives = (n: number) => '●'.repeat(n) + '○'.repeat(Math.max(0, hud.startingLives - n));

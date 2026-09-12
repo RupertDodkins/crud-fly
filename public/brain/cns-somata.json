@@ -1,0 +1,20 @@
+{
+  "file": "cns-somata-40k.f32",
+  "layout": "little-endian float32 xyz triples, micrometres",
+  "count": 40000,
+  "sampledFrom": 141781,
+  "bbox": {
+    "min": [
+      19.744,
+      38.064,
+      81.232
+    ],
+    "max": [
+      749.344,
+      551.968,
+      1076.248
+    ]
+  },
+  "seed": 20260911,
+  "note": "Soma positions of MaleCNS v1.0 neurons (brain and ventral nerve cord). Static backdrop; these neurons are NOT simulated."
+}

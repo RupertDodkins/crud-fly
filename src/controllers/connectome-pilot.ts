@@ -153,9 +153,36 @@ export type PilotTelemetry = {
   readonly force: number;
 };
 
+/** Static identity of one unit in the circuit. No anatomical coordinates exist in this dataset. */
+export interface NeuronInfo {
+  readonly index: number;
+  /** MaleCNS body ID; look it up on neuprint (male-cns:v1.0). */
+  readonly bodyId: number;
+  readonly type: string;
+  readonly side: 'L' | 'R' | 'M';
+  readonly role: string;
+  readonly sign: 1 | -1 | 0;
+  readonly nt: string;
+}
+
+/**
+ * Read-only per-neuron view for presentation. `rates()` is a snapshot of the current model activity
+ * (dimensionless, [0, maxRate]). `positions` is deliberately absent: provenance.json states the graph
+ * carries no anatomical positions, so any layout a renderer chooses must be labelled schematic.
+ */
+export interface BrainView {
+  readonly neurons: readonly NeuronInfo[];
+  readonly inputIndices: readonly [readonly number[], readonly number[]];
+  readonly outputIndices: readonly [readonly number[], readonly number[]];
+  readonly edges: { readonly pre: Uint16Array; readonly post: Uint16Array; readonly weight: Float32Array };
+  rates(): Float32Array;
+  readonly hasPositions: false;
+}
+
 /** Narrows Controller.telemetry so callers see the concrete fields instead of an index signature. */
 export interface ConnectomePilot extends Controller {
   telemetry(): PilotTelemetry;
+  brain(): BrainView;
 }
 
 export interface PilotParams {
@@ -345,6 +372,7 @@ export function createConnectomePilot(
   const net = new RateCircuit(circuit, p);
   const rest = restingIndices(new RateCircuit(circuit, p), p);
   const base = createHeuristic(`${id}:intercept`, 0, { aimNoise: 0 });
+  const brainView = buildBrainView(circuit, net);
   let telemetry: PilotTelemetry = {
     dnLeft: 0,
     dnRight: 0,
@@ -384,6 +412,32 @@ export function createConnectomePilot(
     telemetry(): PilotTelemetry {
       return telemetry;
     },
+    brain(): BrainView {
+      return brainView;
+    },
+  };
+}
+
+function buildBrainView(circuit: CircuitData, net: RateCircuit): BrainView {
+  const neurons: NeuronInfo[] = [];
+  for (let i = 0; i < circuit.units.count; i++) {
+    neurons.push({
+      index: i,
+      bodyId: circuit.units.bodyId[i] ?? -1,
+      type: circuit.types[circuit.units.type[i] ?? -1]?.name ?? 'unknown',
+      side: circuit.units.side[i] ?? 'M',
+      role: circuit.units.role[i] ?? 'unknown',
+      sign: circuit.units.sign[i] ?? 0,
+      nt: circuit.units.nt[i] ?? 'unclear',
+    });
+  }
+  return {
+    neurons,
+    inputIndices: net.sides.inputs,
+    outputIndices: net.sides.outputs,
+    edges: { pre: net.pre, post: net.post, weight: net.weights },
+    rates: () => Float32Array.from(net.rates),
+    hasPositions: false,
   };
 }
 
