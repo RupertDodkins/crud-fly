@@ -110,8 +110,9 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
     ctx.font = `600 15px ${mono}`;
     ctx.fillText(`${a.name} ${lives(a.lives)}   ${lives(b.lives)} ${b.name}`, x, y);
     y += 28;
-    ctx.font = `13px ${mono}`;
-    ctx.fillText(`RULES IN FORCE: ${hud.rulesInForce} / ${hud.totalRules}`, x, y);
+    ctx.font = `11px ${mono}`;
+    const fired = new Set(frame.log.filter(e => e.kind === 'life_lost').map(e => e.reason)).size;
+    ctx.fillText(`RULES IN FORCE: ${hud.rulesInForce} / ${hud.totalRules} · fired ${fired}`, x, y);
     y += 26;
     ctx.fillStyle = pink;
     ctx.font = `12px ${mono}`;
@@ -119,8 +120,8 @@ export function createComposite(): { canvas: HTMLCanvasElement; draw(scene: HTML
       y = wrap(line, x, y, HUD_W - 40, 16);
     }
     ctx.fillStyle = mint;
-    ctx.font = `11px ${mono}`;
-    wrap(hud.finePrint, x, H - 96, HUD_W - 40, 15);
+    ctx.font = `10px ${mono}`;
+    wrap(hud.finePrint, x, H - 142, HUD_W - 40, 13);
   }
 
   return { canvas, draw };

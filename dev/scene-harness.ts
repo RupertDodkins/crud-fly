@@ -1,3 +1,5 @@
+import { loadSomaPositions } from '../src/brain/positions';
+import { loadFlybody } from '../src/presentation/flybody';
 // Isolated fixtures and frozen hero replay for presentation review.
 import type { Ball, FlyBody, FlyPhase, Frame, Player, RuleEvent, Table, Vec2 } from '../src/core/model';
 import { createComposite } from '../src/presentation/composite';
@@ -199,6 +201,7 @@ function frame(): Frame {
   };
 }
 
+await loadFlybody();
 const stage = document.getElementById('stage')!;
 const label = document.getElementById('label')!;
 const scene = createScene3D(stage, new URLSearchParams(location.search).has('detail'));
@@ -214,13 +217,13 @@ if (params.has('replay')) {
   replay = createSession({ seed: tape.seed, rules: tape.rules, physics: tape.physics, names: tape.names,
     controllers: [replayController(tape.controllerIds[0], commands[0]), replayController(tape.controllerIds[1], commands[1])] });
 }
-const pilot = params.has('live') ? createConnectomePilot('connectome', parseCircuit(circuit)) : null;
+const pilot = params.has('live') ? createConnectomePilot('connectome', parseCircuit(circuit), undefined, loadSomaPositions()) : null;
 if (pilot) scene.brain(pilot.brain());
-if (pilot) replay = createSession({ seed: 42, rules: DEMO_RULES, physics: DEMO_PHYSICS, names: ['FLY', 'OPP'], controllers: [pilot, createHeuristic('heuristic', 42 * 31 + 2)] });
+if (pilot) replay = createSession({ seed: 42, rules: DEMO_RULES, physics: DEMO_PHYSICS, names: ['FLY', 'BOT'], controllers: [pilot, createHeuristic('heuristic', 42 * 31 + 2)] });
 const current = () => replay?.frame() ?? frame();
 const step = () => { if (replay) replay.step(); else stepScript(); };
 const skipSeconds = Math.max(0, Number(params.get('t') ?? 0));
-for (let i = 0; i < Math.round(skipSeconds * HZ); i++) { step(); scene.update(current(), DT); }
+for (let i = 0; i < Math.round(skipSeconds * HZ); i++) { step(); scene.update(current(), DT, false); }
 
 const toggle = document.getElementById('toggle')!;
 toggle.textContent = paused ? 'Play' : 'Pause';
@@ -262,8 +265,13 @@ function loop(now: number): void {
   composite?.draw(scene.canvas, f, {
     title: pilot ? 'Simulated neural activity' : 'Frozen hero replay', telemetry: pilot?.telemetry() ?? null,
     rulesInForce: rulesInForce(DEMO_RULES), totalRules: 47, startingLives: 3,
-    logTail: f.log.filter(e => e.kind === 'life_lost' || e.kind === 'pocket').slice(-4).map(e => e.kind === 'life_lost' ? `LIFE LOST ${f.players[e.player].name}: ${e.reason.replace(/_/g, ' ')}` : e.kind === 'pocket' ? `POCKET: ${e.ball} ball` : ''),
-    finePrint: 'Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.',
+    logTail: f.log.filter(e => e.kind === 'life_lost' || e.kind === 'pocket' || e.kind === 'serve_fault' || e.kind === 'match_over').slice(-6).map(e => {
+      if (e.kind === 'life_lost') return `LIFE LOST ${f.players[e.player].name}: ${e.reason.replace(/_/g, ' ')}`;
+      if (e.kind === 'pocket') return `POCKET: ${e.ball} ball`;
+      if (e.kind === 'serve_fault') return `SERVE FAULT ${f.players[e.player].name} (${e.attempt})`;
+      return e.kind === 'match_over' ? `MATCH OVER: ${f.players[e.winner].name}` : '';
+    }),
+    finePrint: 'FLY is driven by the connectome pilot; BOT is a scripted heuristic with no brain. Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.',
   });
   label.textContent = `tick ${f.tick}  phase ${f.players[0].fly.phase} ${f.players[0].fly.phaseT.toFixed(3)}s  log ${f.log.length}`;
   if (recorder?.state === 'recording' && (f.tick / HZ >= captureEnd || replay?.done())) { recorder.stop(); paused = true; }

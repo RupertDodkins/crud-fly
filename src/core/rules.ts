@@ -1,5 +1,6 @@
 import type { Ball, FlyBody, LifeLostReason, MatchState, Player, PlayerCommand, PlayerId, RuleEvent, Shot, Table, Turn, Vec2 } from './model';
 import { vec } from './model';
+import { CARRY_OFFSET_M, GRAB_REACH_M, graspPoint } from './embodiment';
 import { DT, speedOf, timeToStop, type PhysicsParams } from './physics';
 
 /**
@@ -45,10 +46,9 @@ export const DEMO_RULES: CrudRules = {
 
 /** Pause after a life loss so the consequence is legible before the serve is set up. */
 export const RESOLVE_TICKS = 90;
-/** A fly this close to a free cue ball on its turn picks it up (ball-in-hand), metres. */
-export const GRAB_REACH = 0.1;
-/** The held cue ball sits this far ahead of the fly along its heading; it is also the release point. */
-export const CARRY_OFFSET = 0.04;
+/** Body constants live in embodiment.ts; re-exported here under the names the rules use. */
+export const GRAB_REACH = GRAB_REACH_M;
+export const CARRY_OFFSET = CARRY_OFFSET_M;
 /** Distance in from the short end at which a pocketed cue ball is put back on the table. */
 export const CUE_RETRIEVE_INSET = 0.22;
 
@@ -136,10 +136,8 @@ export function heldBy(state: MatchState): PlayerId | null {
   return null;
 }
 
-/** Where a held cue ball sits: CARRY_OFFSET ahead of the fly along its heading. Also the release point. */
-export function carryPoint(fly: FlyBody): Vec2 {
-  return vec(fly.pos.x + Math.cos(fly.heading) * CARRY_OFFSET, fly.pos.y + Math.sin(fly.heading) * CARRY_OFFSET);
-}
+/** Where a held cue ball sits and where a throw is released. Alias of embodiment.graspPoint. */
+export const carryPoint = graspPoint;
 
 /** Serve placement: on the centre line, `footSpotInset` in from the receiver's end. */
 export function footSpot(table: Table, rules: CrudRules, receiverEnd: EndIndex): Vec2 {

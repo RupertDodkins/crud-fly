@@ -6,6 +6,7 @@
 import * as T from 'three';
 import { loadFlybody } from './flybody';
 import type { FlyPhase } from '../core/model';
+import { STRIKE_REACH_M } from '../core/embodiment';
 
 export const colors = {
   mint: 0x87c9b1,
@@ -73,17 +74,19 @@ export interface FlyRig {
   /** Body meshes recoloured by the life-lost flash. */
   readonly flashable: readonly T.Mesh[];
   readonly scale: number;
+  readonly ready: () => boolean;
   readonly animateAnatomy: (walking: boolean, phaseT: number, t: number) => void;
 }
 
-export function makeFly(lengthMetres: number): FlyRig {
+export function makeFly(lengthMetres: number, ballRadius = lengthMetres / 3.6, bodyColor = 0xae772d): FlyRig {
   const s = lengthMetres / SOURCE_LENGTH;
+  const noseOffset = STRIKE_LUNGE - STRIKE_REACH_M + ballRadius;
   const root = new T.Group();
   const body = new T.Group();
   const g = new T.Group();
   body.add(g);
   // The engine root reaches the ball surface. Keep the visible nose behind it.
-  g.position.z = 0.91 + 0.03 / s;
+  g.position.z = 0.91 + noseOffset / s;
   body.scale.setScalar(s);
   body.position.y = -SOURCE_FEET_Y * s;
   root.add(body);
@@ -172,15 +175,15 @@ export function makeFly(lengthMetres: number): FlyRig {
 
   let anatomy: Awaited<ReturnType<typeof loadFlybody>> | undefined;
   if (typeof document !== 'undefined') {
-    void loadFlybody().then(loaded => {
+    void loadFlybody(bodyColor).then(loaded => {
       anatomy = loaded;
-      loaded.group.position.z += 0.03 / s;
+      loaded.group.position.z += noseOffset / s;
       body.add(loaded.group);
       g.visible = false;
       loaded.group.traverse(node => { if (node instanceof T.Mesh) flashable.push(node); });
     }).catch(error => console.error('FlyBody asset could not load; showing procedural fly.', error));
   }
-  return { root, body, wings, legs, flashable, scale: s,
+  return { root, body, wings, legs, flashable, scale: s, ready: () => !!anatomy,
     animateAnatomy: (walking, phaseT, t) => anatomy?.animate(walking, phaseT, t) };
 
 }

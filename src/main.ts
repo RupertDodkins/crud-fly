@@ -5,6 +5,7 @@ import { createSession } from './core/session';
 import { createHeuristic } from './controllers/heuristic';
 import { createConnectomePilot, parseCircuit, type BrainView } from './controllers/connectome-pilot';
 import circuitJson from './brain/flight-v1.json';
+import { loadSomaPositions } from './brain/positions';
 import { drawDebug } from './presentation/debug2d';
 import { createScene3D } from './presentation/scene3d';
 import { createComposite, type HudData } from './presentation/composite';
@@ -18,13 +19,13 @@ const useBrain = params.get('brain') !== '0';
 const view2d = params.get('view') === '2d';
 const record = params.get('record') === '1';
 const recordSeconds = Number(params.get('seconds') ?? 0);
-const FINE_PRINT = 'Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.';
+const FINE_PRINT = 'FLY is driven by the connectome pilot; BOT is a scripted heuristic with no brain. Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.';
 
 const stage = document.getElementById('stage')!;
 const hud = document.getElementById('hud')!;
 
 const heuristic = (id: string, s: number) => createHeuristic(id, s);
-const pilot = useBrain ? createConnectomePilot('connectome', parseCircuit(circuitJson)) : null;
+const pilot = useBrain ? createConnectomePilot('connectome', parseCircuit(circuitJson), undefined, loadSomaPositions()) : null;
 const controllers: [Controller, Controller] = [pilot ?? heuristic('heuristic-a', seed * 31 + 1), heuristic('heuristic-b', seed * 31 + 2)];
 
 const session = createSession({
@@ -32,7 +33,7 @@ const session = createSession({
   rules: DEMO_RULES,
   physics: DEMO_PHYSICS,
   controllers,
-  names: ['FLY', 'OPP'],
+  names: ['FLY', 'BOT'],
 });
 
 let canvas: HTMLCanvasElement;
@@ -52,7 +53,7 @@ if (view2d) {
   const scene = createScene3D(stage);
   canvas = scene.canvas;
   // Optional presentation hook: if the scene exposes `brain(view)`, it receives the read-only per-neuron view once.
-  // The view has neuron IDs and live rates and no positions; any layout drawn from it must be labelled schematic.
+  // The view has neuron IDs, live rates and real MaleCNS soma positions (view.soma); see positions-provenance.json.
   const withBrain = scene as unknown as { brain?: (view: BrainView) => void };
   if (pilot && typeof withBrain.brain === 'function') withBrain.brain(pilot.brain());
   addEventListener('resize', () => scene.resize(stage.clientWidth, stage.clientHeight));

@@ -21,7 +21,17 @@ const session = createSession({
   controllers: [createHeuristic('heuristic-a', seed), createHeuristic('heuristic-b', seed + 1)],
   names: ['Fly A', 'Fly B'],
 });
-for (let i = 0; i < ticks; i++) session.step();
+// Ball-in-hand Crud: both flies should run around the table. Track whether each crosses the centre line.
+const minX = [Infinity, Infinity];
+const maxX = [-Infinity, -Infinity];
+for (let i = 0; i < ticks; i++) {
+  session.step();
+  const f = session.frame();
+  for (const p of [0, 1] as const) {
+    minX[p] = Math.min(minX[p] as number, f.players[p].fly.pos.x);
+    maxX[p] = Math.max(maxX[p] as number, f.players[p].fly.pos.x);
+  }
+}
 
 const frame = session.frame();
 const counts = new Map<string, number>();
@@ -50,6 +60,10 @@ for (const e of frame.log) console.log(describe(e));
 console.log('--- counts by kind');
 for (const [k, v] of [...counts.entries()].sort()) console.log(`${k.padEnd(12)} ${v}`);
 console.log(`lives: P0=${frame.players[0].lives} P1=${frame.players[1].lives}  turn=${frame.turn.kind}`);
+for (const p of [0, 1] as const) {
+  const crossed = (minX[p] as number) < 0 && (maxX[p] as number) > 0;
+  console.log(`P${p} x range [${(minX[p] as number).toFixed(2)}, ${(maxX[p] as number).toFixed(2)}]  crossed centre=${crossed}`);
+}
 
 const tape = session.tape();
 const here = dirname(fileURLToPath(import.meta.url));

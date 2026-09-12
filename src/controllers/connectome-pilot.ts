@@ -153,7 +153,7 @@ export type PilotTelemetry = {
   readonly force: number;
 };
 
-/** Static identity of one unit in the circuit. No anatomical coordinates exist in this dataset. */
+/** Static identity of one unit in the circuit. Positions live on BrainView.soma, not here. */
 export interface NeuronInfo {
   readonly index: number;
   /** MaleCNS body ID; look it up on neuprint (male-cns:v1.0). */
@@ -166,9 +166,29 @@ export interface NeuronInfo {
 }
 
 /**
+ * Real soma positions from the MaleCNS v1.0 release (`somaLocation`, converted from 8 nm voxels to
+ * micrometres). See src/brain/positions-provenance.json. Somata are real; neurites, synapse
+ * locations and activity are not represented by these points.
+ */
+export interface SomaPositions {
+  /** x,y,z per unit in circuit order, micrometres. NaN triple when the release has no soma for that body. */
+  readonly um: Float32Array;
+  /** Units with no soma in the release (10 of 1,072 for flight-v1). */
+  readonly missing: number;
+  /** Bounding box of the whole-CNS backdrop, micrometres; use it to frame the point cloud. */
+  readonly bbox: { readonly min: readonly [number, number, number]; readonly max: readonly [number, number, number] };
+  /**
+   * Static point cloud of somata for the whole CNS (brain + ventral nerve cord), uniformly sampled.
+   * Fetch `url` as little-endian float32 xyz triples in micrometres. These neurons are NOT simulated
+   * and must render as an inert backdrop; only `neurons` above carry model activity.
+   */
+  readonly backdrop: { readonly url: string; readonly count: number; readonly sampledFrom: number };
+}
+
+/**
  * Read-only per-neuron view for presentation. `rates()` is a snapshot of the current model activity
- * (dimensionless, [0, maxRate]). `positions` is deliberately absent: provenance.json states the graph
- * carries no anatomical positions, so any layout a renderer chooses must be labelled schematic.
+ * (dimensionless, [0, maxRate]). When `hasPositions` is true, `soma` holds real anatomical soma
+ * coordinates; when false the graph carries none and any layout drawn must be labelled schematic.
  */
 export interface BrainView {
   readonly neurons: readonly NeuronInfo[];
@@ -176,7 +196,8 @@ export interface BrainView {
   readonly outputIndices: readonly [readonly number[], readonly number[]];
   readonly edges: { readonly pre: Uint16Array; readonly post: Uint16Array; readonly weight: Float32Array };
   rates(): Float32Array;
-  readonly hasPositions: false;
+  readonly hasPositions: boolean;
+  readonly soma: SomaPositions | null;
 }
 
 /** Narrows Controller.telemetry so callers see the concrete fields instead of an index signature. */
@@ -367,12 +388,16 @@ export function createConnectomePilot(
   id: string,
   circuit: CircuitData,
   params?: Partial<PilotParams>,
+  soma: SomaPositions | null = null,
 ): ConnectomePilot {
   const p: PilotParams = { ...DEFAULT_PILOT, ...params };
   const net = new RateCircuit(circuit, p);
   const rest = restingIndices(new RateCircuit(circuit, p), p);
   const base = createHeuristic(`${id}:intercept`, 0, { aimNoise: 0 });
-  const brainView = buildBrainView(circuit, net);
+  if (soma && soma.um.length !== circuit.units.count * 3) {
+    throw new Error(`soma positions cover ${soma.um.length / 3} units, circuit has ${circuit.units.count}`);
+  }
+  const brainView = buildBrainView(circuit, net, soma);
   let telemetry: PilotTelemetry = {
     dnLeft: 0,
     dnRight: 0,
@@ -418,7 +443,7 @@ export function createConnectomePilot(
   };
 }
 
-function buildBrainView(circuit: CircuitData, net: RateCircuit): BrainView {
+function buildBrainView(circuit: CircuitData, net: RateCircuit, soma: SomaPositions | null): BrainView {
   const neurons: NeuronInfo[] = [];
   for (let i = 0; i < circuit.units.count; i++) {
     neurons.push({
@@ -437,7 +462,8 @@ function buildBrainView(circuit: CircuitData, net: RateCircuit): BrainView {
     outputIndices: net.sides.outputs,
     edges: { pre: net.pre, post: net.post, weight: net.weights },
     rates: () => Float32Array.from(net.rates),
-    hasPositions: false,
+    hasPositions: soma !== null,
+    soma,
   };
 }
 

@@ -17,7 +17,7 @@ import { buildTable } from './table';
  */
 export interface Scene3D {
   brain(view: BrainView): void;
-  update(frame: Frame, dt: number): void;
+  update(frame: Frame, dt: number, render?: boolean): void;
   resize(w: number, h: number): void;
   readonly canvas: HTMLCanvasElement;
 }
@@ -77,6 +77,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
   let neural: ReturnType<typeof createNeuralActivity> | undefined;
   let neuralTexture: T.CanvasTexture | undefined;
   const overlay = new T.Scene();
+  const detailCamera = new T.OrthographicCamera(-0.1, 0.1, 0.065, -0.065, 0.01, 2);
   const overlayCamera = new T.OrthographicCamera(0, 1, 1, 0, -1, 1);
   const neuralSprite = new T.Sprite(new T.SpriteMaterial({ depthTest: false }));
   overlay.add(neuralSprite);
@@ -87,6 +88,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     neuralTexture.colorSpace = T.SRGBColorSpace;
     neuralSprite.material.map = neuralTexture;
     neuralSprite.material.needsUpdate = true;
+    resize(container.clientWidth, container.clientHeight);
   }
   const scene = new T.Scene();
   scene.background = new T.Color(colors.mint);
@@ -136,6 +138,16 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     camera.updateProjectionMatrix();
   }
 
+  const numberCanvas = document.createElement('canvas');
+  numberCanvas.width = numberCanvas.height = 128;
+  const numberContext = numberCanvas.getContext('2d')!;
+  numberContext.fillStyle = '#f8edc5';
+  numberContext.beginPath(); numberContext.arc(64, 64, 60, 0, Math.PI * 2); numberContext.fill();
+  numberContext.fillStyle = '#15191b'; numberContext.font = 'bold 92px sans-serif';
+  numberContext.textAlign = 'center'; numberContext.textBaseline = 'middle'; numberContext.fillText('8', 64, 68);
+  const numberTexture = new T.CanvasTexture(numberCanvas);
+  numberTexture.colorSpace = T.SRGBColorSpace;
+
   let tableKey = '';
   let tableGroup: T.Group | null = null;
   const flies: FlyActor[] = [];
@@ -143,6 +155,10 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     cue: mesh(scene, sphere, mat(colors.cream, 0.25, 0.05)),
     object: mesh(scene, sphere, mat(0x15191b, 0.25, 0.05)),
   };
+  const numberPatch = mesh(balls.object, new T.PlaneGeometry(1, 1), new T.MeshBasicMaterial({ map: numberTexture, transparent: true }), [0, 1.006, 0], [0.85, 0.85, 1]);
+  numberPatch.rotation.x = -Math.PI / 2;
+  numberPatch.castShadow = false;
+
   const aimLine = mesh(scene, box, new T.MeshStandardMaterial({ color: colors.lime, emissive: colors.lime, emissiveIntensity: 0.4, roughness: 1 }));
   aimLine.castShadow = false;
   aimLine.visible = false;
@@ -158,7 +174,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     for (const f of flies) scene.remove(f.rig.root);
     flies.length = 0;
     for (let i = 0; i < 2; i++) {
-      const rig = makeFly(table.ballRadius * FLY_LENGTH_IN_BALL_RADII);
+      const rig = makeFly(table.ballRadius * FLY_LENGTH_IN_BALL_RADII, table.ballRadius, i === 0 ? 0xae772d : 0x526b82);
       scene.add(rig.root);
       flies.push({ rig, prev: null, speed: 0, flash: 0 });
     }
@@ -198,33 +214,29 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
     }
   }
 
-  let lastEffectTick = -1;
+  let observedEvents = 0;
   function fireEffects(frame: Frame): void {
-    if (frame.tick < lastEffectTick) lastEffectTick = -1;
-    const tail = frame.log.slice(-8);
-    let newest = lastEffectTick;
-    for (const e of tail) {
-      if (e.tick <= lastEffectTick || frame.tick - e.tick > EFFECT_WINDOW_TICKS) continue;
-      newest = Math.max(newest, e.tick);
-      applyEffect(frame, e);
+    if (frame.log.length < observedEvents) observedEvents = 0;
+    for (const event of frame.log.slice(observedEvents)) {
+      if (frame.tick - event.tick <= EFFECT_WINDOW_TICKS) applyEffect(frame, event);
     }
-    lastEffectTick = newest;
+    observedEvents = frame.log.length;
   }
   function applyEffect(frame: Frame, e: RuleEvent): void {
     switch (e.kind) {
       case 'legal_shot': {
-        const fly = frame.players[e.player].fly;
-        burst(fly.pos.x, frame.table.ballRadius, fly.pos.y, colors.lime, 18);
+        const pos = e.pos ?? frame.cue.pos;
+        burst(pos.x, frame.table.ballRadius, pos.y, colors.lime, 18);
         break;
       }
       case 'contact': {
-        const p = toScene(frame.cue.pos, frame.table);
+        const p = toScene(e.pos ?? frame.cue.pos, frame.table);
         burst(p.x, p.y, p.z, colors.cream, 12);
         break;
       }
       case 'pocket': {
         const ball = e.ball === 'cue' ? frame.cue : frame.object;
-        const p = toScene(ball.pos, frame.table);
+        const p = toScene(e.pos ?? ball.pos, frame.table);
         burst(p.x, p.y, p.z, colors.orange, 14);
         break;
       }
@@ -264,14 +276,18 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
 
   let previousTick = -1;
 
-  function update(frame: Frame, dt: number): void {
+  let lastRenderKey = '';
+  function update(frame: Frame, dt: number, render = true): void {
+    const key = `${frame.tick}:${frame.log.length}:${flies.filter(f => f.rig.ready()).length}:${neural?.ready()}`;
+    if (key === lastRenderKey) return;
+    lastRenderKey = key;
     const elapsed = frame.tick / 120;
     dt = previousTick < 0 ? 0 : Math.max(0, (frame.tick - previousTick) / 120);
     if (frame.tick < previousTick) {
       for (const p of particles) { scene.remove(p.mesh); particlePool.push(p.mesh); }
       particles.length = 0;
       for (const f of flies) { f.prev = null; f.speed = 0; f.flash = 0; }
-      lastEffectTick = -1;
+      observedEvents = 0;
     }
     previousTick = frame.tick;
     ensureWorld(frame.table);
@@ -309,6 +325,7 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
 
     fireEffects(frame);
     stepParticles(dt);
+    if (!render) { lastRenderKey = ''; return; }
     if (detail && flies[0]) {
       const target = new T.Box3().setFromObject(flies[0].rig.body).getCenter(new T.Vector3());
       camera.position.copy(target).add(new T.Vector3(0.24, 0.14, 0.25));
@@ -317,7 +334,25 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
       camera.top = 0.15; camera.bottom = -0.15;
       camera.updateProjectionMatrix();
     }
+    const band = neural && !detail ? Math.min(300, canvas.clientWidth * 0.34) * 350 / 600 + 28 : 0;
+    renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight - band);
     renderer.render(scene, camera);
+    if (neural && !detail && flies[0]) {
+      const width = Math.min(300, canvas.clientWidth * 0.34);
+      const left = width + 30, bottom = canvas.clientHeight - band + 12;
+      const height = band - 24;
+      const target = new T.Vector3(0, 0.028, 0.055).applyQuaternion(flies[0].rig.root.quaternion).add(flies[0].rig.root.position);
+      detailCamera.position.copy(target).add(new T.Vector3(0.16, 0.09, 0.17));
+      detailCamera.lookAt(target);
+      detailCamera.left = -0.065 * width / height; detailCamera.right = 0.065 * width / height;
+      detailCamera.updateProjectionMatrix();
+      renderer.setViewport(left, bottom, width, height);
+      renderer.setScissor(left, bottom, width, height);
+      renderer.setScissorTest(true);
+      renderer.render(scene, detailCamera);
+      renderer.setScissorTest(false);
+    }
+    renderer.setViewport(0, 0, canvas.clientWidth, canvas.clientHeight);
     if (neural && neuralTexture) {
       neural.draw();
       neuralTexture.needsUpdate = true;
@@ -334,10 +369,12 @@ export function createScene3D(container: HTMLElement, detail = false): Scene3D {
 
   function resize(w: number, h: number): void {
     if (w < 1 || h < 1) return;
+    lastRenderKey = '';
     renderer.setSize(w, h, false);
     canvas.style.width = `${w}px`;
     canvas.style.height = `${h}px`;
-    aspect = w / h;
+    const band = neural && !detail ? Math.min(300, w * 0.34) * 350 / 600 + 28 : 0;
+    aspect = w / Math.max(1, h - band);
     frameCamera();
   }
 

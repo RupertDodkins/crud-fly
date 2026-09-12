@@ -3,7 +3,7 @@ import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
 // Apache-2.0 FlyBody geometry; provenance and license are beside the converted asset.
 let source: Promise<T.Group> | undefined;
-export async function loadFlybody(): Promise<{ group: T.Group; animate(walking: boolean, phaseT: number, t: number): void }> {
+export async function loadFlybody(bodyColor = 0xae772d): Promise<{ group: T.Group; animate(walking: boolean, phaseT: number, t: number): void }> {
   source ??= new GLTFLoader().loadAsync(new URL('./assets/flybody.glb', import.meta.url).href).then(gltf => gltf.scene);
   const model = (await source).clone(true);
   const oriented = new T.Group();
@@ -32,7 +32,7 @@ export async function loadFlybody(): Promise<{ group: T.Group; animate(walking: 
       if (node.material instanceof T.MeshStandardMaterial) {
         node.material = node.material.clone();
         const c = node.material.color;
-        if (c.r > c.g && c.g > c.b && c.g > 0.04) node.material.color.setHex(0xae772d);
+        if (c.r > c.g && c.g > c.b && c.g > 0.04) node.material.color.setHex(bodyColor);
       }
     }
   });

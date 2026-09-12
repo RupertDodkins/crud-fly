@@ -1,5 +1,6 @@
 import type { Ball, FlyBody, MatchState, RuleEvent, Shot, Table, Vec2 } from './model';
 import { vec } from './model';
+import { WALK_SPEED_MPS } from './embodiment';
 
 /** Fixed step. 120 Hz keeps two-ball contact stable without substeps. */
 export const DT = 1 / 120;
@@ -21,7 +22,7 @@ export const DEMO_PHYSICS: PhysicsParams = {
 const STOP_EPS = 1e-4;
 
 /** Flies are fast: ball-in-hand means running the length of the table while the object ball rolls. */
-export const FLY_WALK_SPEED = 1.8;
+export const FLY_WALK_SPEED = WALK_SPEED_MPS;
 export const FLY_REACH = 0.08;
 const FLY_LUNGE_SPEED = 0.6;
 const AIM_SECONDS = 0.25;
@@ -140,17 +141,17 @@ export function stepBalls(cue: Ball, object: Ball, table: Table, params: Physics
   const o = roll(object, params.rollingDecel);
   if (cueHeld) {
     const oP = pocketCheck(o, table);
-    if (oP.pocketed && !o.pocketed) events.push({ kind: 'pocket', ball: 'object', tick });
+    if (oP.pocketed && !o.pocketed) events.push({ kind: 'pocket', ball: 'object', tick, pos: o.pos });
     return { cue, object: cushion(oP, table, params.cushionRestitution), events };
   }
   const c = roll(cue, params.rollingDecel);
   const hit = collide(c, o, table.ballRadius, params.ballRestitution);
-  if (hit.hit) events.push({ kind: 'contact', tick });
+  if (hit.hit) events.push({ kind: 'contact', tick, pos: hit.b.pos });
   // Pockets before cushions so a ball reaching a corner is captured rather than bounced.
   const cP = pocketCheck(hit.a, table);
-  if (cP.pocketed && !hit.a.pocketed) events.push({ kind: 'pocket', ball: 'cue', tick });
+  if (cP.pocketed && !hit.a.pocketed) events.push({ kind: 'pocket', ball: 'cue', tick, pos: hit.a.pos });
   const oP = pocketCheck(hit.b, table);
-  if (oP.pocketed && !hit.b.pocketed) events.push({ kind: 'pocket', ball: 'object', tick });
+  if (oP.pocketed && !hit.b.pocketed) events.push({ kind: 'pocket', ball: 'object', tick, pos: hit.b.pos });
   return {
     cue: cushion(cP, table, params.cushionRestitution),
     object: cushion(oP, table, params.cushionRestitution),

@@ -25,6 +25,8 @@ const MAX_CHASE_LEAD = 1.0;
 const OBJECT_END_MARGIN = 0.1;
 /** My own throw is still in flight and moving away: stand and watch rather than sprint after it. */
 const IN_FLIGHT_SPEED = 1.0;
+/** How far inside the legal band the carrier stops before throwing, metres. */
+const ZONE_EDGE_INSET = 0.03;
 const FORCE_BASE = 0.35;
 const FORCE_PER_METRE = 0.1;
 /** Only try a pocket when the cut (object-to-pocket line vs cue line) is this shallow. */
@@ -128,7 +130,11 @@ function carryTarget(obs: Observation): { end: 0 | 1; target: Vec2 } {
   const objectIn = (z: Zone): boolean => !object.pocketed && (inZone(z, object.pos.x, OBJECT_END_MARGIN) || inZone(z, soon.x, OBJECT_END_MARGIN));
   if (objectIn(legalEnds[end])) end = byDistance[1] as 0 | 1;
   const y = clamp(myFly.pos.y, -(table.width / 2 - SIDE_MARGIN), table.width / 2 - SIDE_MARGIN);
-  return { end, target: vec(centre(legalEnds[end]), y) };
+  // Stop just inside the band's table-side edge: a legal throw from there is as good as one from the rail,
+  // and it saves the walk. Nudged inward so a rounding error cannot leave the fly a hair outside the zone.
+  const z = legalEnds[end];
+  const edgeX = end === 0 ? z.xMax - ZONE_EDGE_INSET : z.xMin + ZONE_EDGE_INSET;
+  return { end, target: vec(edgeX, y) };
 }
 
 /** A throw from a short end must head into the table; a sideways/backwards fold is a certain miss. */

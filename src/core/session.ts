@@ -115,7 +115,7 @@ export function createSession(config: SessionConfig): Session {
       if (activeShooter(state.turn) === p && fly.carrying) {
         const reason = validateShot(state, rules, p, fly.shot);
         cue = applyShot({ pos: carryPoint(fly), vel: vec(0, 0), pocketed: false }, fly.shot, rules.maxShotSpeed);
-        events.push(reason === null ? { kind: 'legal_shot', player: p, tick } : { kind: 'life_lost', player: p, reason, tick });
+        events.push(reason === null ? { kind: 'legal_shot', player: p, tick, pos: carryPoint(fly) } : { kind: 'life_lost', player: p, reason, tick });
         state = withFly(state, p, { ...fly, shot: null, carrying: false });
       } else {
         state = withFly(state, p, { ...fly, shot: null });

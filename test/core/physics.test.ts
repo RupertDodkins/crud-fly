@@ -13,7 +13,7 @@ describe('physics', () => {
     const cue: Ball = { pos: vec(-2 * r - 0.004, 0), vel: vec(1, 0), pocketed: false };
     const object: Ball = { pos: vec(0, 0), vel: vec(-0.5, 0), pocketed: false };
     const out = stepBalls(cue, object, table, params, 0);
-    expect(out.events).toEqual([{ kind: 'contact', tick: 0 }]);
+    expect(out.events).toMatchObject([{ kind: 'contact', tick: 0, pos: out.object.pos }]);
     expect(Math.abs(out.cue.vel.x - -0.5)).toBeLessThan(1e-6);
     expect(Math.abs(out.object.vel.x - 1)).toBeLessThan(1e-6);
     expect(Math.abs(out.cue.vel.y)).toBeLessThan(1e-6);
@@ -59,7 +59,7 @@ describe('physics', () => {
     expect(out.object.vel.y).toBe(0);
     expect(out.object.pos.x).toBeGreaterThan(0.03);
     // Same input with a free cue ball is a collision.
-    expect(stepBalls(cue, object, table, DEMO_PHYSICS, 5, false).events).toEqual([{ kind: 'contact', tick: 5 }]);
+    expect(stepBalls(cue, object, table, DEMO_PHYSICS, 5, false).events).toMatchObject([{ kind: 'contact', tick: 5, pos: { x: expect.any(Number), y: expect.any(Number) } }]);
     // A held cue ball sitting over a pocket is not captured.
     const overPocket: Ball = { pos: table.pockets[0] as Vec2, vel: vec(0, 0), pocketed: false };
     expect(stepBalls(overPocket, still(0, 0), table, DEMO_PHYSICS, 6, true).cue.pocketed).toBe(false);
