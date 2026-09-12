@@ -7,6 +7,7 @@ import { createConnectomePilot, parseCircuit } from './controllers/connectome-pi
 import circuitJson from './brain/flight-v1.json';
 import { drawDebug } from './presentation/debug2d';
 import { createScene3D } from './presentation/scene3d';
+import { createComposite, type HudData } from './presentation/composite';
 
 // Watch mode. ?brain=0 uses heuristic vs heuristic (Phase 1 preview). ?view=2d uses the debug canvas.
 // ?seed=N picks the match. ?record=1 starts a WebM capture of the stage and offers it as a download when the match ends.
@@ -16,6 +17,8 @@ const seed = Number(params.get('seed') ?? 7);
 const useBrain = params.get('brain') !== '0';
 const view2d = params.get('view') === '2d';
 const record = params.get('record') === '1';
+const recordSeconds = Number(params.get('seconds') ?? 0);
+const FINE_PRINT = 'Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.';
 
 const stage = document.getElementById('stage')!;
 const hud = document.getElementById('hud')!;
@@ -53,11 +56,8 @@ if (view2d) {
 }
 
 const totalRules = 47;
-function renderHud(frame: Frame): void {
-  const t = pilot?.telemetry();
-  const [a, b] = frame.players;
-  const lives = (n: number) => '●'.repeat(n) + '○'.repeat(Math.max(0, DEMO_RULES.startingLives - n));
-  const tail = frame.log
+function logTail(frame: Frame): string[] {
+  return frame.log
     .filter((e) => e.kind === 'life_lost' || e.kind === 'pocket' || e.kind === 'serve_fault' || e.kind === 'match_over')
     .slice(-6)
     .map((e) => {
@@ -66,6 +66,25 @@ function renderHud(frame: Frame): void {
       if (e.kind === 'serve_fault') return `SERVE FAULT ${frame.players[e.player].name} (${e.attempt})`;
       return `MATCH OVER: ${frame.players[e.winner].name}`;
     });
+}
+
+function hudData(frame: Frame): HudData {
+  return {
+    title: useBrain ? 'Simulated neural activity' : 'Heuristic controller',
+    telemetry: pilot?.telemetry() ?? null,
+    rulesInForce: rulesInForce(DEMO_RULES),
+    totalRules,
+    startingLives: DEMO_RULES.startingLives,
+    logTail: logTail(frame),
+    finePrint: FINE_PRINT,
+  };
+}
+
+function renderHud(frame: Frame): void {
+  const t = pilot?.telemetry();
+  const [a, b] = frame.players;
+  const lives = (n: number) => '●'.repeat(n) + '○'.repeat(Math.max(0, DEMO_RULES.startingLives - n));
+  const tail = logTail(frame);
   const fired = new Set(frame.log.filter((e) => e.kind === 'life_lost').map((e) => e.reason)).size;
   const rows: string[] = [];
   rows.push(`<h1>${useBrain ? 'SIMULATED NEURAL ACTIVITY' : 'HEURISTIC CONTROLLER'}</h1>`);
@@ -78,24 +97,24 @@ function renderHud(frame: Frame): void {
   rows.push(`<h2>${a.name} ${lives(a.lives)} &nbsp; ${lives(b.lives)} ${b.name}</h2>`);
   rows.push(`<div>RULES IN FORCE: ${rulesInForce(DEMO_RULES)} / ${totalRules} · fired ${fired}</div>`);
   rows.push(`<ul>${tail.map((l) => `<li>${l}</li>`).join('')}</ul>`);
-  rows.push(`<p class="fine">Real recorded connectivity (MaleCNS v1.0 subset, 1,072 neurons). Artificial game sensors, simplified dynamics, hand-designed decoder. Not a brain. Not learning. Rules are demo defaults.</p>`);
+  rows.push(`<p class="fine">${FINE_PRINT}</p>`);
   hud.innerHTML = rows.join('');
 }
 
 let recorder: MediaRecorder | null = null;
+let composite: ReturnType<typeof createComposite> | null = null;
 const chunks: Blob[] = [];
+async function save(name: string, body: Blob): Promise<void> {
+  const res = await fetch(`/__save?name=${encodeURIComponent(name)}`, { method: 'POST', body });
+  console.log('saved', await res.text());
+}
 if (record) {
-  recorder = new MediaRecorder(canvas.captureStream(60), { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 8_000_000 });
+  composite = createComposite();
+  recorder = new MediaRecorder(composite.canvas.captureStream(60), { mimeType: 'video/webm;codecs=vp9', videoBitsPerSecond: 12_000_000 });
   recorder.ondataavailable = (e) => chunks.push(e.data);
   recorder.onstop = () => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob(chunks, { type: 'video/webm' }));
-    a.download = `crud-fly-seed${seed}.webm`;
-    a.click();
-    const tape = document.createElement('a');
-    tape.href = URL.createObjectURL(new Blob([JSON.stringify(session.tape())], { type: 'application/json' }));
-    tape.download = `hero-seed${seed}.json`;
-    tape.click();
+    void save(`crud-fly-seed${seed}.webm`, new Blob(chunks, { type: 'video/webm' }));
+    void save(`hero-seed${seed}.json`, new Blob([JSON.stringify(session.tape())], { type: 'application/json' }));
   };
   recorder.start();
 }
@@ -113,9 +132,12 @@ function loop(now: number): void {
   const frame = session.frame();
   render(frame, dt);
   renderHud(frame);
-  if (session.done()) {
-    recorder?.state === 'recording' && recorder.stop();
-    return;
+  composite?.draw(canvas, frame, hudData(frame));
+  const cutoff = recordSeconds > 0 && frame.tick * DT >= recordSeconds;
+  if (session.done() || cutoff) {
+    if (recorder?.state === 'recording') recorder.stop();
+    if (session.done()) return;
+    if (cutoff) return;
   }
   requestAnimationFrame(loop);
 }
