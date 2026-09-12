@@ -5,8 +5,8 @@ import { DT, speedOf, timeToStop, type PhysicsParams } from './physics';
 
 /**
  * Crud rules as configuration. Every boolean is one of the "47 caveats"; the HUD counts how many are
- * enabled and which have fired. Defaults are the public common core, labelled DEMO in the UI because
- * every table has its own house rules.
+ * enabled and which have fired. Defaults are the public common core (ACPA / Official Crud League),
+ * labelled DEMO in the UI because every table has its own house rules.
  */
 export interface CrudRules {
   readonly startingLives: number;
