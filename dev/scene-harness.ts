@@ -192,6 +192,15 @@ const stage = document.getElementById('stage')!;
 const label = document.getElementById('label')!;
 const scene = createScene3D(stage);
 
+// ?t=SECONDS fast-forwards the script so a specific phase can be screenshotted deterministically; ?pause=1 freezes there.
+const params = new URL(location.href).searchParams;
+const paused = params.has('pause');
+const skipSeconds = Number(params.get('t') ?? 0);
+if (skipSeconds > 0) {
+  for (let i = 0; i < Math.round(skipSeconds * HZ); i++) stepScript();
+  for (let i = 0; i < 20; i++) scene.update(frame(), 1 / 60);
+}
+
 let last = performance.now();
 let acc = 0;
 function loop(now: number): void {
@@ -199,7 +208,7 @@ function loop(now: number): void {
   last = now;
   acc += dt;
   while (acc >= DT) {
-    stepScript();
+    if (!paused) stepScript();
     acc -= DT;
   }
   scene.update(frame(), dt);

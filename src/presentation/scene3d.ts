@@ -39,7 +39,7 @@ const FLY_LENGTH_IN_BALL_RADII = 3;
 // Steep enough that a fly standing on the near side of the cue ball does not hide it.
 const CAMERA_ELEVATION = (66 * Math.PI) / 180;
 const CAMERA_DISTANCE = 5;
-const FRAME_MARGIN = 0.12;
+const FRAME_MARGIN = 0.2;
 const EFFECT_WINDOW_TICKS = 6;
 const FLASH_SECONDS = 0.3;
 const DEFAULT_TABLE = { length: 2.54, width: 1.27 };
